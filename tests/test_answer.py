@@ -60,3 +60,18 @@ def test_build_context():
     assert "calc.py:1-5" in context
     assert "Symbol: function add" in context
     assert "Adds two numbers" in context
+
+
+def test_validate_citations_with_github_links():
+    results = [
+        (10.0, {"file": "src/app.py", "start_line": 10, "end_line": 50}),
+    ]
+    answer = "Factory configured at [src/app.py:15-30]."
+    validated = validate_citations(
+        answer,
+        results,
+        web_url="https://github.com/pallets/flask",
+        branch="main",
+    )
+    expected_link = "[src/app.py:15-30](https://github.com/pallets/flask/blob/main/src/app.py#L15-L30)"
+    assert expected_link in validated

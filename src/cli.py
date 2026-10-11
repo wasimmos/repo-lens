@@ -47,9 +47,10 @@ def cmd_search(args: argparse.Namespace) -> None:
     """Search code and documentation passages in an indexed repository."""
     records = load_index(repo_id=args.repo)
     repo_name = args.repo or "global index"
-    print(f"Searching [{repo_name}] ({len(records)} indexed passages) for: '{args.query}'")
+    mode_desc = "hybrid" if getattr(args, "hybrid", False) else "BM25"
+    print(f"Searching [{repo_name}] ({len(records)} passages, mode: {mode_desc}) for: '{args.query}'")
 
-    results = search(args.query, records, top_k=args.top_k)
+    results = search(args.query, records, top_k=args.top_k, hybrid=getattr(args, "hybrid", False))
     display_results(results)
 
 
@@ -64,6 +65,7 @@ def cmd_ask(args: argparse.Namespace) -> None:
         repo_id=args.repo,
         top_k=args.top_k,
         model=model,
+        hybrid=getattr(args, "hybrid", False),
     )
 
     if results:
@@ -108,6 +110,7 @@ def cmd_chat(args: argparse.Namespace) -> None:
                 records=records,
                 top_k=args.top_k,
                 model=model,
+                hybrid=getattr(args, "hybrid", False),
             )
 
             if results:
@@ -166,6 +169,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_search.add_argument("query", help="Search query")
     p_search.add_argument("--repo", "-r", default=None, help="Repository ID to search")
     p_search.add_argument("--top-k", "-k", type=int, default=5, help="Number of results")
+    p_search.add_argument("--hybrid", action="store_true", help="Use hybrid BM25 + dense semantic vector search")
     p_search.set_defaults(func=cmd_search)
 
     # Ask
@@ -174,6 +178,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_ask.add_argument("--repo", "-r", default=None, help="Repository ID to query")
     p_ask.add_argument("--model", "-m", default=None, help="LLM model override")
     p_ask.add_argument("--top-k", "-k", type=int, default=4, help="Retrieved passages count")
+    p_ask.add_argument("--hybrid", action="store_true", help="Use hybrid BM25 + dense semantic vector search")
     p_ask.set_defaults(func=cmd_ask)
 
     # Chat
@@ -181,6 +186,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_chat.add_argument("--repo", "-r", default=None, help="Repository ID to query")
     p_chat.add_argument("--model", "-m", default=None, help="LLM model override")
     p_chat.add_argument("--top-k", "-k", type=int, default=4, help="Retrieved passages count")
+    p_chat.add_argument("--hybrid", action="store_true", help="Use hybrid BM25 + dense semantic vector search")
     p_chat.set_defaults(func=cmd_chat)
 
     # List

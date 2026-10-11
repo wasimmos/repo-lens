@@ -18,17 +18,24 @@ def test_build_parser_subcommands():
     assert args.python_only is True
 
     # Search
-    args = parser.parse_args(["search", "route", "--repo", "sample_repo", "--top-k", "3"])
+    args = parser.parse_args(["search", "route", "--repo", "sample_repo", "--top-k", "3", "--hybrid"])
     assert args.command == "search"
     assert args.query == "route"
     assert args.repo == "sample_repo"
     assert args.top_k == 3
+    assert args.hybrid is True
 
     # Ask
-    args = parser.parse_args(["ask", "What is Flask?", "--model", "qwen2.5-coder:3b"])
+    args = parser.parse_args(["ask", "What is Flask?", "--model", "qwen2.5-coder:3b", "--hybrid"])
     assert args.command == "ask"
     assert args.question == "What is Flask?"
     assert args.model == "qwen2.5-coder:3b"
+    assert args.hybrid is True
+
+    # Chat
+    args = parser.parse_args(["chat", "--hybrid"])
+    assert args.command == "chat"
+    assert args.hybrid is True
 
     # List & Status
     assert parser.parse_args(["list"]).command == "list"

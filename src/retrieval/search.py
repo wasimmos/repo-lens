@@ -150,8 +150,9 @@ def search(
     repo_id: Optional[str] = None,
     top_k: int = 5,
     min_score: float = 0.5,
+    hybrid: bool = False,
 ) -> list[tuple[float, dict[str, Any]]]:
-    """Perform BM25 search over code passages with identifier and metadata boosts.
+    """Perform BM25 (or hybrid RRF) search over code passages.
 
     Args:
         query: User search query.
@@ -159,10 +160,14 @@ def search(
         repo_id: Repository ID to search if records is None.
         top_k: Number of top results to return.
         min_score: Minimum relevance score cutoff.
+        hybrid: If True, combines BM25 with dense semantic vector search via RRF.
 
     Returns:
         List of (score, record) tuples sorted in descending order of relevance.
     """
+    if hybrid:
+        return hybrid_search(query, records=records, repo_id=repo_id, top_k=top_k)
+
     if records is None:
         records = load_index(repo_id=repo_id)
 
@@ -264,6 +269,49 @@ def search(
     return results[:top_k]
 
 
+def hybrid_search(
+    query: str,
+    records: Optional[list[dict[str, Any]]] = None,
+    repo_id: Optional[str] = None,
+    top_k: int = 5,
+    bm25_weight: float = 0.6,
+    semantic_weight: float = 0.4,
+) -> list[tuple[float, dict[str, Any]]]:
+    """Combine lexical BM25 search with dense semantic search using Reciprocal Rank Fusion."""
+    if records is None:
+        records = load_index(repo_id=repo_id)
+
+    if not records:
+        return []
+
+    from src.retrieval.semantic import SemanticSearchEngine
+
+    # 1. Lexical BM25 Ranking
+    bm25_results = search(query, records, top_k=len(records), min_score=0.1)
+
+    # 2. Dense Semantic Latent Vector Ranking
+    semantic_engine = SemanticSearchEngine(records)
+    semantic_results = semantic_engine.search(query, top_k=len(records), min_similarity=0.0)
+
+    # 3. Reciprocal Rank Fusion (RRF)
+    record_to_idx = {id(rec): idx for idx, rec in enumerate(records)}
+    rrf_scores: dict[int, float] = Counter()
+
+    for rank, (_, rec) in enumerate(bm25_results, start=1):
+        rec_idx = record_to_idx[id(rec)]
+        rrf_scores[rec_idx] += bm25_weight / (60.0 + rank)
+
+    for rank, (_, rec) in enumerate(semantic_results, start=1):
+        rec_idx = record_to_idx[id(rec)]
+        rrf_scores[rec_idx] += semantic_weight / (60.0 + rank)
+
+    if not rrf_scores:
+        return []
+
+    sorted_indices = sorted(rrf_scores.keys(), key=lambda i: rrf_scores[i], reverse=True)
+    return [(rrf_scores[i], records[i]) for i in sorted_indices[:top_k]]
+
+
 def main() -> None:
     import argparse
 
@@ -281,6 +329,11 @@ def main() -> None:
         type=int,
         default=5,
         help="Number of results to return (default: 5)",
+    )
+    parser.add_argument(
+        "--hybrid",
+        action="store_true",
+        help="Use hybrid BM25 + dense semantic vector search with RRF",
     )
     parser.add_argument(
         "--list-repos",
@@ -310,11 +363,11 @@ def main() -> None:
             if not query:
                 continue
 
-            results = search(query, records, top_k=args.top_k)
+            results = search(query, records, top_k=args.top_k, hybrid=args.hybrid)
             display_results(results)
         return
 
-    results = search(args.query, records, top_k=args.top_k)
+    results = search(args.query, records, top_k=args.top_k, hybrid=args.hybrid)
     display_results(results)
 
 

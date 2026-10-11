@@ -42,7 +42,8 @@ htmlcov/
 data/repos/
 data/indexes/
 data/sample_repo/
-data/index.json
+data/*.json
+data/*.npz
 !data/.gitkeep
 
 # OS

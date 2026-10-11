@@ -20,8 +20,31 @@ from src.llm.provider import MODEL, generate_answer
 from src.retrieval.search import load_index, search
 
 
+from src.ingestion.indexer import get_repo_metadata
+
+
+def format_citation_link(
+    path: str,
+    start: int,
+    end: int,
+    web_url: Optional[str] = None,
+    branch: Optional[str] = "main",
+) -> str:
+    """Format citation with clickable GitHub markdown link if web_url is available."""
+    text = f"[{path}:{start}-{end}]"
+    if not web_url:
+        return text
+    clean_base = web_url.rstrip("/")
+    active_branch = branch or "main"
+    url = f"{clean_base}/blob/{active_branch}/{path}#L{start}-L{end}"
+    return f"[{path}:{start}-{end}]({url})"
+
+
 def validate_citations(
-    answer: str, results: list[tuple[float, dict[str, Any]]]
+    answer: str,
+    results: list[tuple[float, dict[str, Any]]],
+    web_url: Optional[str] = None,
+    branch: Optional[str] = "main",
 ) -> str:
     """Check whether citations in the answer refer to retrieved source ranges."""
     bracketed = re.findall(r"\[([^:\[\]\n]+):(\d+)-(\d+)\]", answer)
@@ -57,12 +80,15 @@ def validate_citations(
             for source_path, source_start, source_end in allowed
         )
 
-        citation = f"[{path}:{start}-{end}]"
+        citation = format_citation_link(
+            path, start, end, web_url=web_url, branch=branch
+        )
+        raw_label = f"[{path}:{start}-{end}]"
 
         if is_valid:
             verified.append(citation)
         else:
-            unverified.append(citation)
+            unverified.append(raw_label)
 
     if not citations:
         return answer + (
@@ -141,6 +167,8 @@ def answer_question(
     records: Optional[list[dict[str, Any]]] = None,
     top_k: int = 4,
     model: Optional[str] = None,
+    web_url: Optional[str] = None,
+    hybrid: bool = False,
 ) -> tuple[str, list[tuple[float, dict[str, Any]]]]:
     """Complete pipeline: search index -> build context -> query LLM -> validate citations.
 
@@ -150,7 +178,11 @@ def answer_question(
     if records is None:
         records = load_index(repo_id=repo_id)
 
-    results = search(question, records, top_k=top_k)
+    meta = get_repo_metadata(repo_id)
+    active_url = web_url or meta.get("web_url")
+    active_branch = meta.get("branch", "main")
+
+    results = search(question, records, top_k=top_k, hybrid=hybrid)
 
     if not results:
         return (
@@ -160,7 +192,9 @@ def answer_question(
 
     context = build_context(results)
     raw_answer = ask_ollama(question, context, model=model)
-    final_answer = validate_citations(raw_answer, results)
+    final_answer = validate_citations(
+        raw_answer, results, web_url=active_url, branch=active_branch
+    )
 
     return final_answer, results
 

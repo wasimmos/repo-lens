@@ -39,11 +39,42 @@ class RepoInfo:
     is_git: bool
     commit_sha: Optional[str] = None
     branch: Optional[str] = None
+    web_url: Optional[str] = None
 
     def to_dict(self) -> dict:
         data = asdict(self)
         data["path"] = str(self.path)
         return data
+
+
+def extract_web_url(source: str) -> Optional[str]:
+    """Extract a canonical GitHub web URL from a URL, SSH string, or shorthand."""
+    clean = source.strip()
+    if not clean:
+        return None
+
+    # git@github.com:owner/repo.git
+    ssh_match = re.match(r"^git@github\.com:([^/]+)/([^/]+?)(?:\.git)?$", clean)
+    if ssh_match:
+        return f"https://github.com/{ssh_match.group(1)}/{ssh_match.group(2)}"
+
+    # Shorthand: owner/repo
+    shorthand_match = re.match(r"^([a-zA-Z0-9_\-]+)/([a-zA-Z0-9_\-\.]+)$", clean)
+    if shorthand_match and not clean.startswith("http"):
+        repo = shorthand_match.group(2).removesuffix(".git")
+        return f"https://github.com/{shorthand_match.group(1)}/{repo}"
+
+    # HTTP/HTTPS URL
+    if "github.com" in clean:
+        target = clean if clean.startswith("http") else f"https://{clean}"
+        parsed = urlparse(target)
+        parts = [p for p in parsed.path.strip("/").split("/") if p]
+        if len(parts) >= 2:
+            owner = parts[0]
+            repo = parts[1].removesuffix(".git")
+            return f"https://github.com/{owner}/{repo}"
+
+    return None
 
 
 def sanitize_identifier(text: str) -> str:
@@ -124,13 +155,14 @@ def normalize_repo_source(source: str) -> tuple[str, str, str, bool]:
     return repo_id, repo_name, str(local_path), False
 
 
-def get_git_metadata(repo_path: Path) -> tuple[Optional[str], Optional[str]]:
-    """Retrieve the current commit SHA and branch name if git is present."""
+def get_git_metadata(repo_path: Path) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Retrieve the current commit SHA, branch name, and remote web URL if git is present."""
     if not (repo_path / ".git").exists():
-        return None, None
+        return None, None, None
 
     commit_sha = None
     branch = None
+    web_url = None
 
     try:
         sha_proc = subprocess.run(
@@ -158,7 +190,21 @@ def get_git_metadata(repo_path: Path) -> tuple[Optional[str], Optional[str]]:
     except (subprocess.SubprocessError, FileNotFoundError):
         pass
 
-    return commit_sha, branch
+    try:
+        remote_proc = subprocess.run(
+            ["git", "-C", str(repo_path), "config", "--get", "remote.origin.url"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        )
+        remote_raw = remote_proc.stdout.strip()
+        if remote_raw:
+            web_url = extract_web_url(remote_raw)
+    except (subprocess.SubprocessError, FileNotFoundError):
+        pass
+
+    return commit_sha, branch, web_url
 
 
 def clone_repository(
@@ -201,18 +247,7 @@ def load_repository(
     depth: int = 1,
     branch: Optional[str] = None,
 ) -> RepoInfo:
-    """Load or clone a repository from a local path or remote URL.
-
-    Args:
-        source: Local folder path or remote git URL/shorthand.
-        storage_dir: Directory where cloned repos are kept (defaults to data/repos).
-        force_clone: If True and target exists, remove and re-clone.
-        depth: Shallow clone depth (default 1).
-        branch: Specific git branch or tag to clone.
-
-    Returns:
-        RepoInfo with details and local filesystem path.
-    """
+    """Load or clone a repository from a local path or remote URL."""
     storage = storage_dir or DEFAULT_STORAGE_DIR
     repo_id, repo_name, resolved_source, is_remote = normalize_repo_source(source)
 
@@ -223,7 +258,10 @@ def load_repository(
         if not local_dir.is_dir():
             raise RepositoryError(f"Specified path is not a directory: {local_dir}")
 
-        commit_sha, git_branch = get_git_metadata(local_dir)
+        commit_sha, git_branch, web_url = get_git_metadata(local_dir)
+        if not web_url:
+            web_url = extract_web_url(source)
+
         return RepoInfo(
             id=repo_id,
             name=repo_name,
@@ -232,6 +270,7 @@ def load_repository(
             is_git=(local_dir / ".git").exists(),
             commit_sha=commit_sha,
             branch=git_branch,
+            web_url=web_url,
         )
 
     # Remote repository handling
@@ -242,14 +281,16 @@ def load_repository(
             shutil.rmtree(target_path, ignore_errors=True)
             clone_repository(resolved_source, target_path, depth=depth, branch=branch)
         else:
-            # Check if directory is valid and non-empty
             if not any(target_path.iterdir()):
                 shutil.rmtree(target_path, ignore_errors=True)
                 clone_repository(resolved_source, target_path, depth=depth, branch=branch)
     else:
         clone_repository(resolved_source, target_path, depth=depth, branch=branch)
 
-    commit_sha, git_branch = get_git_metadata(target_path)
+    commit_sha, git_branch, web_url = get_git_metadata(target_path)
+    if not web_url:
+        web_url = extract_web_url(resolved_source) or extract_web_url(source)
+
     return RepoInfo(
         id=repo_id,
         name=repo_name,
@@ -258,6 +299,7 @@ def load_repository(
         is_git=True,
         commit_sha=commit_sha,
         branch=branch or git_branch,
+        web_url=web_url,
     )
 
 
@@ -270,7 +312,7 @@ def list_cached_repos(storage_dir: Optional[Path] = None) -> list[RepoInfo]:
     # Check sample_repo if it exists
     sample_dir = PROJECT_DIR / "data" / "sample_repo"
     if sample_dir.exists() and sample_dir.is_dir():
-        sha, branch = get_git_metadata(sample_dir)
+        sha, branch, web_url = get_git_metadata(sample_dir)
         info = RepoInfo(
             id="sample_repo",
             name="sample_repo",
@@ -279,6 +321,7 @@ def list_cached_repos(storage_dir: Optional[Path] = None) -> list[RepoInfo]:
             is_git=(sample_dir / ".git").exists(),
             commit_sha=sha,
             branch=branch,
+            web_url=web_url,
         )
         results.append(info)
         seen_paths.add(sample_dir.resolve())
@@ -287,7 +330,7 @@ def list_cached_repos(storage_dir: Optional[Path] = None) -> list[RepoInfo]:
     if storage.exists() and storage.is_dir():
         for item in sorted(storage.iterdir()):
             if item.is_dir() and item.resolve() not in seen_paths:
-                sha, branch = get_git_metadata(item)
+                sha, branch, web_url = get_git_metadata(item)
                 repo_id = item.name
                 results.append(
                     RepoInfo(
@@ -298,6 +341,7 @@ def list_cached_repos(storage_dir: Optional[Path] = None) -> list[RepoInfo]:
                         is_git=(item / ".git").exists(),
                         commit_sha=sha,
                         branch=branch,
+                        web_url=web_url,
                     )
                 )
                 seen_paths.add(item.resolve())

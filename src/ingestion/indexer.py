@@ -490,15 +490,54 @@ def index_repository(
         encoding="utf-8",
     )
 
+    # Extract web URL and git metadata
+    if repo_info:
+        web_url = repo_info.web_url
+        branch = repo_info.branch
+        commit_sha = repo_info.commit_sha
+    else:
+        from src.ingestion.repo_loader import get_git_metadata
+        commit_sha, branch, web_url = get_git_metadata(repo_dir)
+
     stats = {
         "repo_id": target_id,
         "repo_path": str(repo_dir),
+        "web_url": web_url,
+        "branch": branch or "main",
+        "commit_sha": commit_sha,
         "total_records": len(records),
         "scanned_files": scanned_files,
         "file_types": file_counts,
     }
 
+    # Save metadata sidecar
+    meta_target = specific_index_file.with_name(f"{target_id}_meta.json")
+    meta_target.write_text(json.dumps(stats, indent=2), encoding="utf-8")
+
+    global_meta = OUTPUT_FILE.parent / "index_meta.json"
+    global_meta.write_text(json.dumps(stats, indent=2), encoding="utf-8")
+
     return specific_index_file, records, stats
+
+
+def get_repo_metadata(repo_id: Optional[str] = None) -> dict[str, Any]:
+    """Retrieve metadata (including web_url, branch) for an indexed repository."""
+    if repo_id and repo_id != "default":
+        meta_file = INDEXES_DIR / f"{repo_id}_meta.json"
+        if meta_file.exists():
+            try:
+                return json.loads(meta_file.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+    global_meta = OUTPUT_FILE.parent / "index_meta.json"
+    if global_meta.exists():
+        try:
+            return json.loads(global_meta.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    return {}
 
 
 def get_index_path(repo_id: Optional[str] = None) -> Path:

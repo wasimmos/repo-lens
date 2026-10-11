@@ -27,6 +27,8 @@
 
 ### 1. Prerequisites
 - Python 3.10+
+### 1. Prerequisites
+- Python 3.10+ with `numpy`
 - [Ollama](https://ollama.com/) running locally:
   ```bash
   ollama serve
@@ -37,40 +39,37 @@
 Clone and index any GitHub repository:
 ```bash
 # Using GitHub shorthand
-python3 -m src ingest pallets/flask
+repolens ingest pallets/flask
 
 # Or full URL
-python3 -m src ingest https://github.com/psf/requests.git
+repolens ingest https://github.com/psf/requests.git
 
 # Or a local folder
-python3 -m src ingest data/sample_repo
+repolens ingest data/sample_repo
 ```
 
-### 3. Ask Questions
-Ask a question about the repository and receive answers with verified source citations:
+### 3. Ask Questions with Clickable Citations
+Ask a question and receive answers with verified source citations linked directly to GitHub lines:
 ```bash
-python3 -m src ask "How does route registration work?" --repo pallets_flask
+repolens ask "How does route registration work?" --repo pallets_flask
 ```
 
-### 4. Interactive Chat
-Start an interactive Q&A session in your terminal:
+### 4. Hybrid Semantic Search
+Search using hybrid lexical BM25 + dense semantic vector search via Reciprocal Rank Fusion:
 ```bash
-python3 -m src chat --repo pallets_flask
+repolens search "credentials and session tokens" --repo pallets_flask --hybrid
 ```
 
-### 5. Search Code & Docs
-Run fast lexical code search across the indexed repository:
+### 5. Interactive Chat
+Start an interactive terminal Q&A session:
 ```bash
-python3 -m src search "url_for" --repo pallets_flask --top-k 5
+repolens chat --repo pallets_flask
 ```
 
 ### 6. List Repositories & System Status
 ```bash
-# List all cached repositories and indexes
-python3 -m src list
-
-# Check system status and Ollama availability
-python3 -m src status
+repolens list
+repolens status
 ```
 
 ---
@@ -79,12 +78,12 @@ python3 -m src status
 
 | Command | Arguments | Description |
 |---|---|---|
-| `python3 -m src ingest <source>` | `[--force] [--python-only]` | Clone/load and index a repository |
-| `python3 -m src ask "<question>"` | `[--repo <id>] [--model <m>] [--top-k <k>]` | Single-shot Q&A with citations |
-| `python3 -m src chat` | `[--repo <id>] [--model <m>] [--top-k <k>]` | Interactive continuous terminal chat |
-| `python3 -m src search "<query>"` | `[--repo <id>] [--top-k <k>]` | BM25 search over code and docs |
-| `python3 -m src list` | | List cached repositories and indexes |
-| `python3 -m src status` | | Check Ollama and system status |
+| `repolens ingest <source>` | `[--force] [--python-only]` | Clone/load and index a repository |
+| `repolens ask "<question>"` | `[--repo <id>] [--model <m>] [--top-k <k>] [--hybrid]` | Single-shot Q&A with clickable citations |
+| `repolens chat` | `[--repo <id>] [--model <m>] [--top-k <k>] [--hybrid]` | Interactive terminal chat |
+| `repolens search "<query>"` | `[--repo <id>] [--top-k <k>] [--hybrid]` | Lexical or Hybrid BM25+LSI search |
+| `repolens list` | | List cached repositories and indexes |
+| `repolens status` | | Check Ollama and system status |
 
 ---
 
@@ -97,11 +96,6 @@ You can configure the LLM provider using environment variables:
 | `OLLAMA_MODEL` | `qwen2.5-coder:3b` | Target Ollama model |
 | `OLLAMA_URL` | `http://localhost:11434/api/chat` | Ollama API chat endpoint |
 
-Example:
-```bash
-OLLAMA_MODEL="qwen2.5-coder:7b" python3 -m src ask "Explain the middleware architecture"
-```
-
 ---
 
 ## Running Tests
@@ -110,4 +104,4 @@ Run the complete test suite:
 ```bash
 pytest
 ```
-All 31 unit tests cover repository loading, multi-format indexing, code tokenization, BM25 retrieval, citation verification, and CLI parsers.
+Includes 39 automated tests covering repository loading, multi-format indexing, code tokenization, dense semantic vectors, hybrid RRF retrieval, citation verification with GitHub links, and CLI commands.
