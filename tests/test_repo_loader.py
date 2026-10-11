@@ -90,3 +90,16 @@ def test_list_cached_repos(tmp_path: Path):
     assert len(matched) == 1
     assert matched[0].name == "my_cached_repo"
 
+
+def test_repo_info_tuple_unpacking(tmp_path: Path):
+    local_dir = tmp_path / "unpack_repo"
+    local_dir.mkdir()
+    (local_dir / "README.md").write_text("# Unpack")
+
+    repo_id, repo_path, branch, web_url = load_repository(str(local_dir), force=True)
+    assert repo_id == "unpack_repo"
+    assert repo_path == local_dir.resolve()
+    assert branch is None
+    assert web_url is None
+
+

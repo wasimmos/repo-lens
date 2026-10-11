@@ -50,3 +50,7 @@ data/.active_repo
 # OS
 .DS_Store
 Thumbs.db
+
+# User artifacts & screenshots
+error/
+

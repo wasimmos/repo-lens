@@ -41,6 +41,10 @@ class RepoInfo:
     branch: Optional[str] = None
     web_url: Optional[str] = None
 
+    def __iter__(self):
+        """Allow tuple unpacking: repo_id, repo_path, branch, web_url = repo_info"""
+        return iter((self.id, self.path, self.branch, self.web_url))
+
     def to_dict(self) -> dict:
         data = asdict(self)
         data["path"] = str(self.path)
@@ -246,10 +250,12 @@ def load_repository(
     force_clone: bool = False,
     depth: int = 1,
     branch: Optional[str] = None,
+    force: bool = False,
 ) -> RepoInfo:
     """Load or clone a repository from a local path or remote URL."""
     storage = storage_dir or DEFAULT_STORAGE_DIR
     repo_id, repo_name, resolved_source, is_remote = normalize_repo_source(source)
+    should_force = force or force_clone
 
     if not is_remote:
         local_dir = Path(resolved_source)
@@ -277,7 +283,7 @@ def load_repository(
     target_path = storage / repo_id
 
     if target_path.exists():
-        if force_clone:
+        if should_force:
             shutil.rmtree(target_path, ignore_errors=True)
             clone_repository(resolved_source, target_path, depth=depth, branch=branch)
         else:

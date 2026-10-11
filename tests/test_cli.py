@@ -157,3 +157,20 @@ def test_cmd_provider_and_model_runs(capsys, tmp_path: Path):
         out = capsys.readouterr().out
         assert "Active model for provider 'openai' set to: gpt-4o-mini" in out
 
+
+def test_cmd_ingest_runs(capsys, tmp_path: Path):
+    from src.cli import cmd_ingest
+    test_repo = tmp_path / "cli_sample"
+    test_repo.mkdir()
+    (test_repo / "hello.py").write_text("def hello(): pass")
+
+    parser = build_parser()
+    args = parser.parse_args(["ingest", str(test_repo), "--force"])
+    with patch("src.cli.ACTIVE_REPO_FILE", tmp_path / ".active_repo"):
+        cmd_ingest(args)
+
+    out = capsys.readouterr().out
+    assert "Ingesting repository:" in out
+    assert "Successfully indexed" in out
+
+

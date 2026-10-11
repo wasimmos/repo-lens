@@ -211,9 +211,10 @@ class RepoLensHandler(BaseHTTPRequestHandler):
             python_only = bool(body.get("python_only", False))
 
             try:
-                repo_id, repo_path, branch, web_url = load_repository(source, force=force)
-                records = index_repository(
-                    repo_path,
+                repo_info = load_repository(source, force=force)
+                repo_id, repo_path, branch, web_url = repo_info
+                idx_file, records, stats = index_repository(
+                    repo_info,
                     repo_id=repo_id,
                     python_only=python_only,
                     web_url=web_url,

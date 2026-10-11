@@ -149,14 +149,15 @@ def cmd_ingest(args: argparse.Namespace) -> None:
     source = args.source.strip()
     print(f"\n{Style.BOLD}🚀 Ingesting repository:{Style.RESET} {Style.CYAN}{source}{Style.RESET}")
 
-    repo_id, repo_path, branch, web_url = load_repository(source, force=args.force)
+    repo_info = load_repository(source, force=args.force)
+    repo_id, repo_path, branch, web_url = repo_info
     print(f"✔ Repository loaded at: {repo_path}")
     if web_url:
         print(f"✔ Remote GitHub URL:    {web_url} (branch: {branch})")
 
     print(f"\n⚡ Indexing source code, markdown, and config files...")
-    records = index_repository(
-        repo_path,
+    idx_file, records, stats = index_repository(
+        repo_info,
         repo_id=repo_id,
         python_only=args.python_only,
         web_url=web_url,

@@ -145,3 +145,29 @@ def test_index_repository_end_to_end(tmp_path: Path):
     names = [r["name"] for r in loaded]
     assert "add" in names
     assert "Project" in names
+
+
+def test_index_repository_python_only_and_metadata(tmp_path: Path):
+    repo_dir = tmp_path / "mixed_codebase"
+    repo_dir.mkdir()
+    (repo_dir / "calc.py").write_text("def mul(a, b):\n    return a * b\n")
+    (repo_dir / "notes.md").write_text("# Notes\nSome notes.\n")
+
+    output_idx = tmp_path / "out.json"
+    index_file, records, stats = index_repository(
+        repo_dir,
+        output_file=output_idx,
+        repo_id="mixed_test",
+        python_only=True,
+        web_url="https://github.com/example/mixed",
+        branch="develop",
+    )
+
+    assert stats["web_url"] == "https://github.com/example/mixed"
+    assert stats["branch"] == "develop"
+    assert "markdown" not in stats["file_types"]
+    assert stats["file_types"].get("python") == 1
+    names = [r["name"] for r in records]
+    assert "mul" in names
+    assert "Notes" not in names
+

@@ -415,6 +415,9 @@ def index_repository(
     output_file: Optional[Path] = None,
     repo_id: Optional[str] = None,
     include_all_files: bool = True,
+    python_only: bool = False,
+    web_url: Optional[str] = None,
+    branch: Optional[str] = None,
 ) -> tuple[Path, list[dict[str, Any]], dict[str, Any]]:
     """Index a target repository and save records to disk.
 
@@ -423,16 +426,22 @@ def index_repository(
         output_file: Custom output json path.
         repo_id: Custom repo identifier.
         include_all_files: If True, indexes Python, docs, configs, and other code.
+        python_only: If True, only indexes Python files (sets include_all_files=False).
+        web_url: Optional remote GitHub web URL for citations.
+        branch: Optional git branch name for citations.
 
     Returns:
         tuple of (index_file_path, records, stats)
     """
+    if python_only:
+        include_all_files = False
+
     if isinstance(repo_target, RepoInfo):
         repo_info = repo_target
         repo_dir = repo_info.path
         target_id = repo_id or repo_info.id
-    elif isinstance(repo_target, Path) and repo_target.exists():
-        repo_dir = repo_target.resolve()
+    elif isinstance(repo_target, (Path, str)) and Path(repo_target).exists():
+        repo_dir = Path(repo_target).resolve()
         target_id = repo_id or repo_dir.name
         repo_info = None
     else:
@@ -492,12 +501,14 @@ def index_repository(
 
     # Extract web URL and git metadata
     if repo_info:
-        web_url = repo_info.web_url
-        branch = repo_info.branch
+        web_url = web_url or repo_info.web_url
+        branch = branch or repo_info.branch
         commit_sha = repo_info.commit_sha
     else:
         from src.ingestion.repo_loader import get_git_metadata
-        commit_sha, branch, web_url = get_git_metadata(repo_dir)
+        commit_sha, git_branch, git_web_url = get_git_metadata(repo_dir)
+        web_url = web_url or git_web_url
+        branch = branch or git_branch
 
     stats = {
         "repo_id": target_id,
@@ -549,9 +560,17 @@ def get_index_path(repo_id: Optional[str] = None) -> Path:
     return OUTPUT_FILE
 
 
-def load_index(index_path: Optional[Path | str] = None) -> list[dict[str, Any]]:
+def load_index(
+    index_path: Optional[Path | str] = None,
+    repo_id: Optional[str] = None,
+) -> list[dict[str, Any]]:
     """Load indexed records from file with backward-compatibility support."""
-    target = Path(index_path) if index_path else OUTPUT_FILE
+    if index_path:
+        target = Path(index_path)
+    elif repo_id:
+        target = get_index_path(repo_id)
+    else:
+        target = OUTPUT_FILE
 
     if not target.exists():
         raise FileNotFoundError(
