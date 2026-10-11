@@ -58,3 +58,12 @@ def test_cmd_list_runs(capsys):
     captured = capsys.readouterr()
     assert "Cached Repositories" in captured.out
     assert "Available Indexes" in captured.out
+
+
+def test_get_source_link():
+    from src.cli import get_source_link
+
+    rec = {"file": "src/app.py", "start_line": 10, "end_line": 20}
+    link, term = get_source_link(rec, web_url="https://github.com/pallets/flask", branch="main")
+    assert link == "https://github.com/pallets/flask/blob/main/src/app.py#L10-L20"
+    assert "src/app.py:10-20" in term

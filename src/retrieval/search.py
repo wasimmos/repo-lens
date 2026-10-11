@@ -349,7 +349,9 @@ def main() -> None:
             print(f"- {r}")
         return
 
+    from src.ingestion.indexer import get_repo_metadata
     records = load_index(repo_id=args.repo)
+    meta = get_repo_metadata(args.repo)
     repo_desc = args.repo or "global index"
 
     if not args.query:
@@ -364,23 +366,48 @@ def main() -> None:
                 continue
 
             results = search(query, records, top_k=args.top_k, hybrid=args.hybrid)
-            display_results(results)
+            display_results(results, meta=meta)
         return
 
     results = search(args.query, records, top_k=args.top_k, hybrid=args.hybrid)
-    display_results(results)
+    display_results(results, meta=meta)
 
 
-def display_results(results: list[tuple[float, dict[str, Any]]]) -> None:
-    """Format and display search results."""
+def display_results(
+    results: list[tuple[float, dict[str, Any]]],
+    meta: Optional[dict[str, Any]] = None,
+) -> None:
+    """Format and display search results with clickable links."""
     if not results:
         print("\nNo matching symbols or passages found.\n")
         return
 
+    web_url = meta.get("web_url") if meta else None
+    branch = meta.get("branch", "main") if meta else "main"
+    repo_path = meta.get("repo_path") if meta else None
+
     for rank, (score, record) in enumerate(results, start=1):
+        file_path = record.get("file", "")
+        start_line = record.get("start_line", 1)
+        end_line = record.get("end_line", 1)
+        location = f"{file_path}:{start_line}-{end_line}"
+
+        # Construct link
+        link = ""
+        if web_url:
+            clean_base = web_url.rstrip("/")
+            link = f"{clean_base}/blob/{branch}/{file_path}#L{start_line}-L{end_line}"
+        elif repo_path:
+            abs_p = (Path(repo_path) / file_path).resolve()
+            link = f"file://{abs_p}#L{start_line}"
+
+        terminal_loc = f"\033]8;;{link}\033\\{location}\033]8;;\033\\" if link else location
+
         print(f"\n--- Result {rank} | Score: {score:.3f} ---")
         print(f"Symbol:   [{record.get('kind', 'code')}] {record.get('name', 'unnamed')}")
-        print(f"Location: {record.get('file', '')}:{record.get('start_line', 1)}-{record.get('end_line', 1)}")
+        print(f"Location: {terminal_loc}")
+        if link:
+            print(f"Link:     {link}")
 
         if record.get("docstring"):
             print(f"Docstring: {record['docstring']}")

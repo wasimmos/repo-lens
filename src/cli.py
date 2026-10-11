@@ -15,11 +15,35 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
-from src.ingestion.indexer import index_repository
+from src.ingestion.indexer import get_repo_metadata, index_repository
 from src.ingestion.repo_loader import list_cached_repos, load_repository
 from src.llm.answer import answer_question
 from src.llm.provider import MODEL, OLLAMA_URL, check_ollama_available
 from src.retrieval.search import display_results, list_available_indexes, load_index, search
+
+
+def get_source_link(
+    rec: dict,
+    web_url: Optional[str] = None,
+    branch: str = "main",
+    repo_path: Optional[str] = None,
+) -> tuple[str, str]:
+    """Return (direct_url, osc8_terminal_link) for a record."""
+    file_path = rec.get("file", "")
+    start = rec.get("start_line", 1)
+    end = rec.get("end_line", 1)
+    loc = f"{file_path}:{start}-{end}"
+
+    link = ""
+    if web_url:
+        clean_base = web_url.rstrip("/")
+        link = f"{clean_base}/blob/{branch}/{file_path}#L{start}-L{end}"
+    elif repo_path:
+        abs_p = (Path(repo_path) / file_path).resolve()
+        link = f"file://{abs_p}#L{start}"
+
+    terminal_loc = f"\033]8;;{link}\033\\{loc}\033]8;;\033\\" if link else loc
+    return link, terminal_loc
 
 
 def cmd_ingest(args: argparse.Namespace) -> None:
@@ -46,18 +70,24 @@ def cmd_ingest(args: argparse.Namespace) -> None:
 def cmd_search(args: argparse.Namespace) -> None:
     """Search code and documentation passages in an indexed repository."""
     records = load_index(repo_id=args.repo)
+    meta = get_repo_metadata(args.repo)
     repo_name = args.repo or "global index"
     mode_desc = "hybrid" if getattr(args, "hybrid", False) else "BM25"
     print(f"Searching [{repo_name}] ({len(records)} passages, mode: {mode_desc}) for: '{args.query}'")
 
     results = search(args.query, records, top_k=args.top_k, hybrid=getattr(args, "hybrid", False))
-    display_results(results)
+    display_results(results, meta=meta)
 
 
 def cmd_ask(args: argparse.Namespace) -> None:
     """Ask a question about a repository and receive a cited response."""
     repo_name = args.repo or "global index"
     model = args.model or MODEL
+
+    meta = get_repo_metadata(args.repo)
+    web_url = meta.get("web_url")
+    branch = meta.get("branch", "main")
+    repo_path = meta.get("repo_path")
 
     print(f"Querying [{repo_name}] using model '{model}'...")
     answer, results = answer_question(
@@ -71,10 +101,11 @@ def cmd_ask(args: argparse.Namespace) -> None:
     if results:
         print("\n--- Retrieved Evidence ---")
         for score, rec in results:
-            print(
-                f"- {rec.get('file', '')}:{rec.get('start_line', 1)}-"
-                f"{rec.get('end_line', 1)} [{rec.get('kind', 'code')}] ({rec.get('name', '')})"
-            )
+            link, term_loc = get_source_link(rec, web_url, branch, repo_path)
+            print(f"- [{rec.get('kind', 'code')}] {rec.get('name', 'unnamed')}")
+            print(f"  Location: {term_loc}")
+            if link:
+                print(f"  Link:     {link}")
 
     print("\n--- RepoLens Answer ---")
     print(answer)
@@ -86,6 +117,10 @@ def cmd_chat(args: argparse.Namespace) -> None:
     repo_name = args.repo or "global index"
     model = args.model or MODEL
     records = load_index(repo_id=args.repo)
+    meta = get_repo_metadata(args.repo)
+    web_url = meta.get("web_url")
+    branch = meta.get("branch", "main")
+    repo_path = meta.get("repo_path")
 
     print(f"=== RepoLens Interactive Chat ===")
     print(f"Target repository: [{repo_name}] ({len(records)} passages)")
@@ -116,7 +151,10 @@ def cmd_chat(args: argparse.Namespace) -> None:
             if results:
                 print("\n[Evidence]")
                 for score, rec in results:
-                    print(f"  - {rec['file']}:{rec['start_line']}-{rec['end_line']} ({rec['name']})")
+                    link, term_loc = get_source_link(rec, web_url, branch, repo_path)
+                    print(f"  - [{rec.get('kind', 'code')}] {rec.get('name', 'unnamed')} ({term_loc})")
+                    if link:
+                        print(f"    ➔ {link}")
 
             print("\n[Answer]")
             print(answer)
