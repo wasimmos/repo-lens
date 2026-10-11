@@ -149,25 +149,28 @@ def cmd_ingest(args: argparse.Namespace) -> None:
     source = args.source.strip()
     print(f"\n{Style.BOLD}🚀 Ingesting repository:{Style.RESET} {Style.CYAN}{source}{Style.RESET}")
 
-    repo_info = load_repository(source, force=args.force)
-    repo_id, repo_path, branch, web_url = repo_info
-    print(f"✔ Repository loaded at: {repo_path}")
-    if web_url:
-        print(f"✔ Remote GitHub URL:    {web_url} (branch: {branch})")
+    try:
+        repo_info = load_repository(source, force=args.force)
+        repo_id, repo_path, branch, web_url = repo_info
+        print(f"✔ Repository loaded at: {repo_path}")
+        if web_url:
+            print(f"✔ Remote GitHub URL:    {web_url} (branch: {branch})")
 
-    print(f"\n⚡ Indexing source code, markdown, and config files...")
-    idx_file, records, stats = index_repository(
-        repo_info,
-        repo_id=repo_id,
-        python_only=args.python_only,
-        web_url=web_url,
-        branch=branch,
-    )
-    print(f"{Style.GREEN}✔ Successfully indexed {len(records)} passages for [{repo_id}]{Style.RESET}")
+        print(f"\n⚡ Indexing source code, markdown, and config files...")
+        idx_file, records, stats = index_repository(
+            repo_info,
+            repo_id=repo_id,
+            python_only=args.python_only,
+            web_url=web_url,
+            branch=branch,
+        )
+        print(f"{Style.GREEN}✔ Successfully indexed {len(records)} passages for [{repo_id}]{Style.RESET}")
 
-    # Set as active repository automatically
-    set_active_repo(repo_id)
-    print(f"{Style.DIM}✔ Set as active repository for future queries.{Style.RESET}\n")
+        # Set as active repository automatically
+        set_active_repo(repo_id)
+        print(f"{Style.DIM}✔ Set as active repository for future queries.{Style.RESET}\n")
+    except Exception as err:
+        print(f"\n{Style.RED}✖ Ingestion failed:{Style.RESET} {err}\n")
 
 
 def cmd_search(args: argparse.Namespace) -> None:
@@ -590,7 +593,12 @@ Examples:
         aliases=["clone", "add", "load"],
         help="Clone/load and index a repository (aliases: clone, add, load)",
     )
-    p_ingest.add_argument("source", help="GitHub URL, owner/repo shorthand, or local directory path")
+    p_ingest.add_argument(
+        "source",
+        nargs="?",
+        default=".",
+        help="GitHub URL, owner/repo shorthand, or local directory path (default: current directory '.')",
+    )
     p_ingest.add_argument("--force", action="store_true", help="Force re-clone if already cached")
     p_ingest.add_argument("--python-only", action="store_true", help="Only index Python files")
     p_ingest.set_defaults(func=cmd_ingest)

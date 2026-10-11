@@ -105,6 +105,11 @@ def normalize_repo_source(source: str) -> tuple[str, str, str, bool]:
     # Check local path first if it exists
     local_path = Path(clean_source).expanduser()
     if not local_path.is_absolute():
+        cwd_local = (Path.cwd() / clean_source).resolve()
+        if cwd_local.exists():
+            repo_name = cwd_local.name
+            repo_id = sanitize_identifier(repo_name)
+            return repo_id, repo_name, str(cwd_local), False
         resolved_local = (PROJECT_DIR / clean_source).resolve()
         if resolved_local.exists():
             repo_name = resolved_local.name
@@ -227,6 +232,9 @@ def clone_repository(
         cmd.extend(["--branch", branch])
     cmd.extend([remote_url, str(target_dir)])
 
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+
     try:
         proc = subprocess.run(
             cmd,
@@ -234,6 +242,7 @@ def clone_repository(
             text=True,
             check=False,
             timeout=300,
+            env=env,
         )
         if proc.returncode != 0:
             err_msg = proc.stderr.strip() or proc.stdout.strip()
