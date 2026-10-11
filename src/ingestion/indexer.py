@@ -47,7 +47,7 @@ IGNORED_FILENAMES = {
     "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "uv.lock",
 }
 
-MAX_FILE_SIZE_BYTES = 500 * 1024  # 500 KB
+MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024  # 2 MB
 
 
 def is_binary_file(file_path: Path) -> bool:
@@ -175,6 +175,56 @@ def extract_python_symbols(file_path: Path, repo_root: Path) -> list[dict[str, A
             "code": "\n".join(lines[:min(len(lines), doc_lines + 5)]),
             "language": "python",
         })
+
+    # If no functions/classes were found (e.g. flat scripts, Streamlit apps, ML pipelines):
+    if not records and lines:
+        if len(lines) <= 80:
+            first_meaningful = next((l.strip() for l in lines if l.strip()), file_path.name)
+            records.append({
+                "name": file_path.name,
+                "kind": "code",
+                "file": rel_path,
+                "start_line": 1,
+                "end_line": len(lines),
+                "docstring": first_meaningful[:200],
+                "code": source,
+                "language": "python",
+            })
+        else:
+            chunks = chunk_text_by_lines(
+                lines,
+                rel_path,
+                kind="code",
+                name=file_path.name,
+                language="python",
+                chunk_size=60,
+                overlap=12,
+            )
+            records.extend(chunks)
+    elif records:
+        # Check if there is significant top-level code outside functions/classes
+        top_stmts = [
+            n for n in tree.body
+            if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            and not (isinstance(n, ast.Expr) and isinstance(getattr(n, "value", None), ast.Constant) and isinstance(getattr(n.value, "value", None), str))
+        ]
+        if top_stmts:
+            stmt_lines = [getattr(n, "lineno", 1) for n in top_stmts]
+            if len(stmt_lines) >= 5:
+                start_l = min(stmt_lines)
+                end_l = max(getattr(n, "end_lineno", start_l) for n in top_stmts)
+                snippet = "\n".join(lines[start_l - 1 : min(len(lines), end_l)])
+                if len(snippet.strip()) > 50:
+                    records.append({
+                        "name": f"{file_path.stem}:script",
+                        "kind": "script",
+                        "file": rel_path,
+                        "start_line": start_l,
+                        "end_line": end_l,
+                        "docstring": f"Top-level execution script in {file_path.name}",
+                        "code": snippet,
+                        "language": "python",
+                    })
 
     return records
 
@@ -374,13 +424,77 @@ def extract_general_file_chunks(
     )
 
 
+def extract_notebook_chunks(file_path: Path, repo_root: Path) -> list[dict[str, Any]]:
+    """Extract code and markdown cells from Jupyter Notebook (.ipynb) files."""
+    try:
+        raw_text = file_path.read_text(encoding="utf-8", errors="replace")
+        nb = json.loads(raw_text)
+    except Exception:
+        return []
+
+    cells = nb.get("cells", [])
+    if not cells:
+        return []
+
+    rel_path = file_path.relative_to(repo_root).as_posix()
+    records: list[dict[str, Any]] = []
+    line_counter = 1
+
+    for idx, cell in enumerate(cells):
+        cell_type = cell.get("cell_type", "")
+        source_raw = cell.get("source", [])
+        if isinstance(source_raw, list):
+            cell_text = "".join(source_raw).strip()
+        else:
+            cell_text = str(source_raw).strip()
+
+        if not cell_text:
+            continue
+
+        cell_lines = cell_text.splitlines()
+        num_lines = len(cell_lines)
+        start_line = line_counter
+        end_line = line_counter + max(num_lines - 1, 0)
+        line_counter = end_line + 2
+
+        first_line = cell_lines[0].lstrip("#").strip()[:100]
+
+        if cell_type == "code":
+            records.append({
+                "name": f"{file_path.stem}:cell_{idx + 1}",
+                "kind": "code",
+                "file": rel_path,
+                "start_line": start_line,
+                "end_line": end_line,
+                "docstring": first_line,
+                "code": cell_text,
+                "language": "python",
+            })
+        elif cell_type == "markdown":
+            records.append({
+                "name": first_line or f"{file_path.stem}:note_{idx + 1}",
+                "kind": "documentation",
+                "file": rel_path,
+                "start_line": start_line,
+                "end_line": end_line,
+                "docstring": first_line,
+                "code": cell_text,
+                "language": "markdown",
+            })
+
+    return records
+
+
 def extract_symbols(
     file_path: Path, repo_root: Optional[Path] = None
 ) -> list[dict[str, Any]]:
     """Backward-compatible function to extract symbols/records from a file."""
     root = repo_root or REPO_DIR
-    if file_path.suffix.lower() == ".py":
+    ext = file_path.suffix.lower()
+    if ext == ".py":
         return extract_python_symbols(file_path, root)
+    if ext == ".ipynb":
+        return extract_notebook_chunks(file_path, root)
     return extract_general_file_chunks(file_path, root)
 
 
@@ -473,6 +587,10 @@ def index_repository(
                 syms = extract_python_symbols(file_path, repo_dir)
                 records.extend(syms)
                 file_counts["python"] = file_counts.get("python", 0) + 1
+            elif ext == ".ipynb":
+                cells = extract_notebook_chunks(file_path, repo_dir)
+                records.extend(cells)
+                file_counts["notebook"] = file_counts.get("notebook", 0) + 1
             elif include_all_files:
                 chunks = extract_general_file_chunks(file_path, repo_dir)
                 records.extend(chunks)

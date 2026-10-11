@@ -25,19 +25,27 @@ from src.ingestion.indexer import get_repo_metadata
 
 def format_citation_link(
     path: str,
-    start: int,
-    end: int,
+    start: Optional[int] = None,
+    end: Optional[int] = None,
     web_url: Optional[str] = None,
     branch: Optional[str] = "main",
 ) -> str:
     """Format citation with clickable GitHub markdown link if web_url is available."""
-    text = f"[{path}:{start}-{end}]"
-    if not web_url:
-        return text
-    clean_base = web_url.rstrip("/")
     active_branch = branch or "main"
-    url = f"{clean_base}/blob/{active_branch}/{path}#L{start}-L{end}"
-    return f"[{path}:{start}-{end}]({url})"
+    if start is not None and end is not None:
+        text = f"[{path}:{start}-{end}]"
+        if not web_url:
+            return text
+        clean_base = web_url.rstrip("/")
+        url = f"{clean_base}/blob/{active_branch}/{path}#L{start}-L{end}"
+        return f"[{path}:{start}-{end}]({url})"
+    else:
+        text = f"[{path}]"
+        if not web_url:
+            return text
+        clean_base = web_url.rstrip("/")
+        url = f"{clean_base}/blob/{active_branch}/{path}"
+        return f"[{path}]({url})"
 
 
 def validate_citations(
@@ -45,18 +53,19 @@ def validate_citations(
     results: list[tuple[float, dict[str, Any]]],
     web_url: Optional[str] = None,
     branch: Optional[str] = "main",
+    records: Optional[list[dict[str, Any]]] = None,
 ) -> str:
-    """Check whether citations in the answer refer to retrieved source ranges."""
-    bracketed = re.findall(r"\[([^:\[\]\n]+):(\d+)-(\d+)\]", answer)
-    unbracketed = re.findall(
-        r"(?:^|\n)\s*[-*]?\s*`?([a-zA-Z0-9_\-/\.]+):(\d+)-(\d+)`?",
-        answer,
+    """Find citations in answer, verify against retrieved results, and format links."""
+    active_branch = branch or "main"
+
+    # Match bracketed citations [path:start-end] or list items - path:start-end
+    bracketed = re.findall(
+        r"\[([a-zA-Z0-9_\-/\.]+):(\d+)-(\d+)\]", answer
     )
-    # Combine unique citations preserving order
-    citations: list[tuple[str, str, str]] = []
-    for c in bracketed + unbracketed:
-        if c not in citations:
-            citations.append(c)
+    markdown_list = re.findall(
+        r"[-*]\s+([a-zA-Z0-9_\-/\.]+):(\d+)-(\d+)", answer
+    )
+    citations = bracketed if bracketed else markdown_list
 
     allowed = [
         (
@@ -71,24 +80,55 @@ def validate_citations(
     unverified = []
 
     for path, start, end in citations:
-        start, end = int(start), int(end)
+        start_i, end_i = int(start), int(end)
 
         is_valid = any(
             source_path == path
-            and source_start <= start
-            and end <= source_end
+            and source_start <= start_i
+            and end_i <= source_end
             for source_path, source_start, source_end in allowed
         )
 
         citation = format_citation_link(
-            path, start, end, web_url=web_url, branch=branch
+            path, start_i, end_i, web_url=web_url, branch=active_branch
         )
-        raw_label = f"[{path}:{start}-{end}]"
+        raw_label = f"[{path}:{start_i}-{end_i}]"
 
         if is_valid:
             verified.append(citation)
         else:
             unverified.append(raw_label)
+
+    # If web_url is available, make inline citations clickable GitHub links
+    if web_url:
+        known_files = {record["file"] for _, record in results}
+        if records:
+            known_files.update(r["file"] for r in records)
+
+        def replace_bracketed_lines(match: re.Match) -> str:
+            p = match.group(1)
+            s = int(match.group(2))
+            e = int(match.group(3))
+            return format_citation_link(p, s, e, web_url=web_url, branch=active_branch)
+
+        def replace_bracketed_file(match: re.Match) -> str:
+            p = match.group(1)
+            if p in known_files:
+                return format_citation_link(p, web_url=web_url, branch=active_branch)
+            return match.group(0)
+
+        # Replace [path:start-end] if not already part of a link [path:start-end](...)
+        answer = re.sub(
+            r"\[([a-zA-Z0-9_\-/\.]+):(\d+)-(\d+)\](?!\()",
+            replace_bracketed_lines,
+            answer,
+        )
+        # Replace [path.ext] if in known files and not already part of a link
+        answer = re.sub(
+            r"\[([a-zA-Z0-9_\-/\.]+\.[a-zA-Z0-9]+)\](?!\()",
+            replace_bracketed_file,
+            answer,
+        )
 
     if not citations:
         return answer + (
@@ -109,10 +149,30 @@ def validate_citations(
     return answer
 
 
-def build_context(results: list[tuple[float, dict[str, Any]]]) -> str:
+def build_context(
+    results: list[tuple[float, dict[str, Any]]],
+    records: Optional[list[dict[str, Any]]] = None,
+    meta: Optional[dict[str, Any]] = None,
+) -> str:
     """Format retrieved records into a structured context block for the LLM."""
-    passages = []
+    sections = []
 
+    # 1. Repository Structure & Manifest
+    manifest_parts = []
+    if meta and meta.get("repo_id"):
+        manifest_parts.append(f"Repository: {meta['repo_id']}")
+    if meta and meta.get("web_url"):
+        manifest_parts.append(f"GitHub URL: {meta['web_url']} (branch: {meta.get('branch', 'main')})")
+
+    unique_files = sorted({r["file"] for r in (records or [rec for _, rec in results])})
+    if unique_files:
+        manifest_parts.append(f"Repository Files: {', '.join(unique_files)}")
+
+    if manifest_parts:
+        sections.append("=== Repository Structure & Files ===\n" + "\n".join(manifest_parts))
+
+    # 2. Retrieved Passages
+    passages = []
     for score, record in results:
         passages.append(
             f"""Source: {record['file']}:{record['start_line']}-{record['end_line']}
@@ -120,11 +180,13 @@ Symbol: {record.get('kind', 'code')} {record.get('name', 'unnamed')}
 Relevance score: {score:.3f}
 Docstring: {record.get('docstring', '')}
 Code:
-{record.get('code', '')}
-"""
+{record.get('code', '')}"""
         )
 
-    return "\n---\n".join(passages)
+    if passages:
+        sections.append("=== Retrieved Code & Document Evidence ===\n" + "\n---\n".join(passages))
+
+    return "\n\n".join(sections)
 
 
 def ask_llm(
@@ -133,31 +195,26 @@ def ask_llm(
     model: Optional[str] = None,
     provider: Optional[str] = None,
 ) -> str:
-    """Format prompt with strict groundedness rules and query LLM."""
-    prompt = f"""You are RepoLens, a codebase intelligence assistant.
+    """Format prompt with strict groundedness, code-first synthesis, and citation rules."""
+    prompt = f"""You are RepoLens, an expert codebase intelligence assistant.
 
-Answer the user's question using ONLY the repository evidence provided below.
+Answer the user's question accurately using the repository evidence and repository structure provided below.
 
-STRICT RULES:
-1. Explain only behavior supported by the supplied source code.
-2. Never invent functions, files, line numbers, examples, or test results.
-3. Do not generate code examples unless explicitly requested.
-4. Cite important claims using [path:start_line-end_line].
-5. Use only paths and line ranges shown in the evidence.
-6. If evidence is insufficient, say what cannot be verified.
-7. Prefer concise, structured answers.
-8. Distinguish explicit behavior from inference.
-9. Do not attribute behavior from another function without evidence.
-10. For exceptions, list only conditions supported by the supplied code.
-11. End with a Sources section containing exact file paths and line ranges.
+STRICT INSTRUCTIONS:
+1. Direct Answer: Answer the user's question directly in the opening paragraph.
+2. Code-First Synthesis: Prioritize actual source code implementation (functions, logic, entry points, scripts, pipelines) rather than merely quoting the README. Explain how the code works.
+3. Explicit Handling of Missing Components: If the user asks about a component that does NOT exist in the repository (such as a CI/CD pipeline, Dockerfile, or database), explicitly confirm that it does not exist, and explain what the repository uses instead (e.g. local execution via app.py, Streamlit).
+4. Accurate Citations: Cite every referenced code file and line range using [path:start_line-end_line] or [path] (e.g. [app.py:1-74], [README.md:50-58]).
+5. Answer Design: Structure your response cleanly with Markdown:
+   - Use bold section titles (e.g. **Direct Answer**, **Implementation & Architecture**, **Execution & Deployment**)
+   - Use bullet points and concise code snippets where helpful
+6. Sources: End with a "### 📚 Sources & Location" section listing each referenced file and its purpose.
 
-Repository evidence:
+Repository evidence & files:
 {context}
 
 User question:
 {question}
-
-Write a concise answer with a Sources section at the end.
 """
     return generate_answer(prompt, model=model, provider=provider)
 
@@ -190,16 +247,19 @@ def answer_question(
 
     results = search(question, records, top_k=top_k, hybrid=hybrid)
 
+    if not results and records:
+        results = search(question, records, top_k=top_k, min_score=0.0)
+
     if not results:
         return (
             "No matching code or documentation was found in the repository for your question.",
             [],
         )
 
-    context = build_context(results)
+    context = build_context(results, records=records, meta=meta)
     raw_answer = ask_ollama(question, context, model=model, provider=provider)
     final_answer = validate_citations(
-        raw_answer, results, web_url=active_url, branch=active_branch
+        raw_answer, results, web_url=active_url, branch=active_branch, records=records
     )
 
     return final_answer, results

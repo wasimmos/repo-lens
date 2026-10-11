@@ -349,6 +349,7 @@ def cmd_chat(args: argparse.Namespace) -> None:
         try:
             answer, results = answer_question(
                 query,
+                repo_id=repo_id,
                 records=records,
                 top_k=args.top_k,
                 model=model,

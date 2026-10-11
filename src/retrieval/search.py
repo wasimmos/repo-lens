@@ -58,6 +58,33 @@ def split_identifier(token: str) -> list[str]:
     return tokens
 
 
+SYNONYM_EXPANSIONS: dict[str, list[str]] = {
+    "deployment": ["deploy", "run", "serve", "app", "streamlit", "docker", "pipeline", "workflow", "main", "start"],
+    "deploy": ["deployment", "run", "serve", "app", "streamlit", "docker", "main"],
+    "pipeline": ["workflow", "train", "model", "process", "step", "notebook", "scaler", "fit"],
+    "pipelines": ["workflow", "train", "model", "process", "step", "notebook"],
+    "locate": ["find", "path", "file", "location", "where"],
+    "location": ["path", "file", "where", "directory"],
+    "where": ["file", "path", "location"],
+    "entrypoint": ["main", "app", "run", "cli", "server", "start"],
+    "entry": ["main", "app", "run", "cli", "server", "start"],
+    "start": ["run", "app", "main", "server", "init"],
+    "database": ["db", "model", "schema", "sql", "data", "table"],
+    "api": ["route", "endpoint", "url", "handler", "view", "request"],
+    "endpoints": ["route", "endpoint", "url", "handler", "view"],
+    "endpoint": ["route", "endpoint", "url", "handler", "view"],
+    "auth": ["login", "token", "jwt", "password", "user", "authenticate"],
+    "train": ["training", "model", "fit", "dataset", "classifier", "notebook"],
+    "training": ["train", "model", "fit", "dataset", "classifier", "notebook"],
+    "model": ["classifier", "weights", "predict", "train", "model", "pkl"],
+    "predict": ["prediction", "inference", "score", "classifier"],
+    "prediction": ["predict", "inference", "score", "classifier"],
+    "frontend": ["ui", "streamlit", "app", "html", "css", "view", "interface"],
+    "interface": ["ui", "streamlit", "app", "view", "frontend"],
+    "config": ["settings", "env", "configuration", "requirements"],
+}
+
+
 def tokenize(text: str, code_aware: bool = True) -> list[str]:
     """Tokenize a text string, optionally expanding code identifiers."""
     raw_tokens = re.findall(r"[a-zA-Z0-9_\-\.]+", text)
@@ -205,8 +232,13 @@ def search(
 
     k1 = 1.5
     b = 0.75
-    results: list[tuple[float, dict[str, Any]]] = []
+    # Synonyms mapping
+    query_synonyms: dict[str, list[str]] = {}
+    for qt in query_terms:
+        if qt in SYNONYM_EXPANSIONS:
+            query_synonyms[qt] = [s for s in SYNONYM_EXPANSIONS[qt] if s not in query_terms]
 
+    results: list[tuple[float, dict[str, Any]]] = []
     for record, terms in zip(records, documents):
         frequencies = Counter(terms)
         length = len(terms)
@@ -227,6 +259,17 @@ def search(
             )
 
             score += idf * frequency * (k1 + 1) / denominator
+
+        # Synonyms matching
+        for qt, syns in query_synonyms.items():
+            for syn in syns:
+                syn_freq = frequencies.get(syn, 0)
+                if syn_freq > 0:
+                    df = document_frequency.get(syn, 0)
+                    if df > 0:
+                        idf = math.log(1 + (document_count - df + 0.5) / (df + 0.5))
+                        denom = syn_freq + k1 * (1 - b + b * length / max(average_length, 1))
+                        score += 0.45 * (idf * syn_freq * (k1 + 1) / denom)
 
         # --- Relevance Boosts ---
         name = record.get("name", "").lower()
@@ -267,6 +310,32 @@ def search(
             results.append((score, record))
 
     results.sort(key=lambda item: item[0], reverse=True)
+
+    # Automatic fallback 1: If BM25 returns 0 results and not already hybrid, try hybrid semantic search
+    if not results and not hybrid:
+        try:
+            sem_res = hybrid_search(query, records=records, repo_id=repo_id, top_k=top_k)
+            if sem_res:
+                return sem_res
+        except Exception:
+            pass
+
+    # Automatic fallback 2: If still 0 results, retrieve top representative codebase files
+    if not results and records:
+        candidates = []
+        for r in records:
+            f_lower = r.get("file", "").lower()
+            base_score = 0.5
+            if any(ep in f_lower for ep in ("app.py", "main.py", "index.", "server.py", "pipeline", "train", "streamlit")):
+                base_score += 2.5
+            if "readme" in f_lower:
+                base_score += 1.5
+            if "requirements" in f_lower or "docker" in f_lower or "setup" in f_lower:
+                base_score += 1.0
+            candidates.append((base_score, r))
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        return candidates[:top_k]
+
     return results[:top_k]
 
 
