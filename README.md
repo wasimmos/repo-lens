@@ -48,27 +48,44 @@ repolens ingest https://github.com/psf/requests.git
 repolens ingest data/sample_repo
 ```
 
-### 3. Ask Questions with Clickable Citations
-Ask a question and receive answers with verified source citations linked directly to GitHub lines:
+### 3. Active Repository Memory
+RepoLens automatically remembers the active repository, so you don't need to pass `--repo` every time:
 ```bash
-repolens ask "How does route registration work?" --repo pallets_flask
+# Switch active repo (supports partial name matching)
+repolens use flask
+
+# List cached repositories and see which one is active
+repolens list    # alias: repolens ls
 ```
 
-### 4. Hybrid Semantic Search
-Search using hybrid lexical BM25 + dense semantic vector search via Reciprocal Rank Fusion:
+### 4. Direct Q&A (No Quotes or Subcommands Needed)
+You can ask questions directly from the command line:
 ```bash
-repolens search "credentials and session tokens" --repo pallets_flask --hybrid
+# Direct question
+repolens "How does route registration work?"
+
+# Or using ask without quotes
+repolens ask How does route registration work
+
+# Target a specific repository or enable hybrid search
+repolens ask "How are cookies signed?" --hybrid
 ```
 
-### 5. Interactive Chat
+### 5. Hybrid Semantic Search
+Search code and documentation passages without quotes:
+```bash
+repolens search credentials and session tokens --hybrid
+```
+
+### 6. Interactive Chat with Slash Commands
 Start an interactive terminal Q&A session:
 ```bash
-repolens chat --repo pallets_flask
+repolens chat    # alias: repolens talk
 ```
+Inside chat, you can switch repositories, toggle hybrid search, or view loaded indexes on the fly using `/use <repo>`, `/hybrid`, `/list`, or `/exit`.
 
-### 6. List Repositories & System Status
+### 7. System Status
 ```bash
-repolens list
 repolens status
 ```
 
@@ -76,14 +93,17 @@ repolens status
 
 ## CLI Reference
 
-| Command | Arguments | Description |
-|---|---|---|
-| `repolens ingest <source>` | `[--force] [--python-only]` | Clone/load and index a repository |
-| `repolens ask "<question>"` | `[--repo <id>] [--model <m>] [--top-k <k>] [--hybrid]` | Single-shot Q&A with clickable citations |
-| `repolens chat` | `[--repo <id>] [--model <m>] [--top-k <k>] [--hybrid]` | Interactive terminal chat |
-| `repolens search "<query>"` | `[--repo <id>] [--top-k <k>] [--hybrid]` | Lexical or Hybrid BM25+LSI search |
-| `repolens list` | | List cached repositories and indexes |
-| `repolens status` | | Check Ollama and system status |
+| Command | Aliases | Arguments | Description |
+|---|---|---|---|
+| `repolens <question>` | | | Ask directly without typing `ask` |
+| `repolens ingest <source>` | `clone`, `add` | `[--force] [--python-only]` | Clone/load, index, and activate repository |
+| `repolens use <repo>` | `select`, `switch` | `<repo_name>` | Set active repository (supports fuzzy match) |
+| `repolens ask <question>` | | `[--repo <id>] [--model <m>] [--top-k <k>] [--hybrid]` | Single-shot Q&A with clickable citations (quotes optional) |
+| `repolens chat` | `talk`, `interactive` | `[--repo <id>] [--model <m>] [--top-k <k>] [--hybrid]` | Interactive terminal chat |
+| `repolens search <query>` | | `[--repo <id>] [--top-k <k>] [--hybrid]` | Lexical or Hybrid BM25+LSI search (quotes optional) |
+| `repolens list` | `ls`, `repos` | | List cached repositories with active indicator |
+| `repolens remove <repo>` | `rm`, `delete` | `<repo_id>` | Remove cached repository and index files |
+| `repolens status` | | | Check Ollama and system status |
 
 ---
 
@@ -104,4 +124,4 @@ Run the complete test suite:
 ```bash
 pytest
 ```
-Includes 39 automated tests covering repository loading, multi-format indexing, code tokenization, dense semantic vectors, hybrid RRF retrieval, citation verification with GitHub links, and CLI commands.
+Includes 42 automated tests covering repository loading, multi-format indexing, code tokenization, dense semantic vectors, hybrid RRF retrieval, citation verification with GitHub links, and CLI UX commands.
