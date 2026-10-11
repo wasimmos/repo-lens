@@ -66,12 +66,12 @@ SUPPORTED_PROVIDERS: dict[str, ProviderSpec] = {
     "gemini": ProviderSpec(
         name="gemini",
         display_name="Google Gemini (Cloud)",
-        default_model="gemini-1.5-flash",
+        default_model="gemini-2.0-flash",
         default_url="https://generativelanguage.googleapis.com/v1beta",
         env_keys=["GEMINI_API_KEY", "GOOGLE_API_KEY"],
         is_cloud=True,
         format_type="gemini",
-        description="Google Gemini API (1.5 Flash, 1.5 Pro, 2.0 Flash)",
+        description="Google Gemini API (2.0 Flash, 1.5 Pro, 2.5 Flash)",
     ),
     "deepseek": ProviderSpec(
         name="deepseek",
@@ -329,6 +329,9 @@ def list_providers() -> list[dict[str, Any]]:
 # Provider Call Implementations
 # ---------------------------------------------------------------------------
 
+DEFAULT_USER_AGENT = "RepoLens/1.0 (https://github.com/wasimmos/repo-lens)"
+
+
 def _call_ollama(
     prompt: str,
     model: str,
@@ -349,7 +352,10 @@ def _call_ollama(
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": DEFAULT_USER_AGENT,
+        },
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -367,7 +373,10 @@ def _call_openai_compatible(
     api_key: Optional[str] = None,
     extra_headers: Optional[dict[str, str]] = None,
 ) -> str:
-    headers = {"Content-Type": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": DEFAULT_USER_AGENT,
+    }
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     if extra_headers:
@@ -409,6 +418,7 @@ def _call_anthropic(
         "Content-Type": "application/json",
         "x-api-key": api_key,
         "anthropic-version": "2023-06-01",
+        "User-Agent": DEFAULT_USER_AGENT,
     }
     payload = {
         "model": model,
@@ -441,8 +451,12 @@ def _call_gemini(
     api_key: str,
 ) -> str:
     clean_base = base_url.rstrip("/")
-    url = f"{clean_base}/models/{model}:generateContent?key={api_key}"
-    headers = {"Content-Type": "application/json"}
+    clean_model = model.removeprefix("models/").strip()
+    url = f"{clean_base}/models/{clean_model}:generateContent?key={api_key}"
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": DEFAULT_USER_AGENT,
+    }
     payload = {
         "system_instruction": {"parts": [{"text": system_prompt}]},
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],

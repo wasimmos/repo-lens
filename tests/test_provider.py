@@ -148,3 +148,30 @@ def test_list_providers():
     assert "openai" in names
     assert "anthropic" in names
     assert "gemini" in names
+
+
+def test_user_agent_header_and_gemini_prefix(monkeypatch):
+    captured_reqs = []
+
+    def fake_urlopen(req, timeout=180):
+        captured_reqs.append(req)
+        return _mock_http_response({
+            "candidates": [{
+                "content": {"parts": [{"text": "Gemini 2.0 response"}], "role": "model"}
+            }]
+        })
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    # Calling with 'models/gemini-2.0-flash' prefix
+    ans = generate_answer("Hello", provider="gemini", api_key="gem-key", model="models/gemini-2.0-flash")
+    assert ans == "Gemini 2.0 response"
+    assert len(captured_reqs) == 1
+
+    req = captured_reqs[0]
+    # Check User-Agent header
+    assert "RepoLens" in req.get_header("User-agent")
+    # Check that 'models/models/' was avoided
+    assert "/models/gemini-2.0-flash:generateContent" in req.full_url
+    assert "models/models" not in req.full_url
+
