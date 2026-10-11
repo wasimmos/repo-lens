@@ -78,9 +78,15 @@ def test_load_nonexistent_local_repo():
         load_repository("/non/existent/path/that/does/not/exist")
 
 
-def test_list_cached_repos():
-    repos = list_cached_repos()
-    # sample_repo exists in data/
-    sample_repos = [r for r in repos if r.id == "sample_repo"]
-    assert len(sample_repos) == 1
-    assert sample_repos[0].is_git is True
+def test_list_cached_repos(tmp_path: Path):
+    storage_dir = tmp_path / "repos"
+    storage_dir.mkdir()
+    fake_repo = storage_dir / "my_cached_repo"
+    fake_repo.mkdir()
+    (fake_repo / "README.md").write_text("# Test")
+
+    repos = list_cached_repos(storage_dir=storage_dir)
+    matched = [r for r in repos if r.id == "my_cached_repo"]
+    assert len(matched) == 1
+    assert matched[0].name == "my_cached_repo"
+

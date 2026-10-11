@@ -85,13 +85,15 @@ def test_active_repo_management(tmp_path: Path):
 
 
 def test_resolve_repo_id():
-    # Requested repo
-    repo_id, desc = resolve_repo_id("sample_repo")
-    assert repo_id == "sample_repo"
+    with patch("src.cli.list_available_indexes", return_value=["sample_repo", "flask_app"]):
+        # Requested repo
+        repo_id, desc = resolve_repo_id("sample_repo")
+        assert repo_id == "sample_repo"
 
-    # Partial match
-    repo_id_partial, _ = resolve_repo_id("sample")
-    assert "sample" in repo_id_partial
+        # Partial match
+        repo_id_partial, _ = resolve_repo_id("sample")
+        assert repo_id_partial == "sample_repo"
+
 
 
 def test_cmd_status_runs(capsys):

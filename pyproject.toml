@@ -3,7 +3,14 @@ name = "repolens"
 version = "0.1.0"
 description = "Repository intelligence and RAG Q&A assistant for GitHub repositories"
 authors = [{ name = "RepoLens Team" }]
-dependencies = []
+dependencies = [
+    "numpy>=1.24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+]
 
 [project.scripts]
 repolens = "src.cli:main"

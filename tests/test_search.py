@@ -1,6 +1,7 @@
 """Tests for retrieval and search module."""
 
 from pathlib import Path
+from unittest.mock import patch
 import pytest
 
 from src.retrieval.search import (
@@ -132,7 +133,17 @@ def test_load_nonexistent_index():
         load_index(repo_id="nonexistent_repo_xyz_123")
 
 
-def test_list_available_indexes():
-    indexes = list_available_indexes()
-    assert isinstance(indexes, list)
-    assert len(indexes) > 0
+def test_list_available_indexes(tmp_path: Path):
+    with patch("src.retrieval.search.INDEXES_DIR", tmp_path), \
+         patch("src.retrieval.search.INDEX_FILE", tmp_path / "nonexistent.json"):
+        # Empty dir
+        assert list_available_indexes() == []
+
+        # Create dummy indexes
+        (tmp_path / "test_repo.json").write_text("[]")
+        (tmp_path / "test_repo_meta.json").write_text("{}")
+        (tmp_path / "another_repo.json").write_text("[]")
+
+        indexes = list_available_indexes()
+        assert indexes == ["another_repo", "test_repo"]
+
