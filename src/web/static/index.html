@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#090d16">
+  <title>RepoLens - Codebase Intelligence</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-logo">🔍</div>
+      <div class="brand-text">
+        <h1>RepoLens</h1>
+        <p>Codebase Intelligence</p>
+      </div>
+    </div>
+
+    <!-- Desktop Navigation Tabs -->
+    <nav class="desktop-nav">
+      <button class="nav-tab-btn active" data-tab="chat">💬 Chat</button>
+      <button class="nav-tab-btn" data-tab="search">🔍 Search</button>
+      <button class="nav-tab-btn" data-tab="repos">📦 Repos</button>
+      <button class="nav-tab-btn" data-tab="settings">⚙️ Settings</button>
+    </nav>
+
+    <!-- Header Badges -->
+    <div class="header-badges">
+      <button id="badge-repo" class="badge" title="Active Repository (Click to change)">
+        <span class="badge-dot"></span>
+        <span id="label-active-repo">Loading...</span>
+      </button>
+      <button id="badge-provider" class="badge" title="Active LLM Agent (Click to change)">
+        <span id="label-active-provider">ollama</span>
+      </button>
+      <button id="btn-phone" class="btn-icon" title="Connect Phone / Mobile">📱</button>
+    </div>
+  </header>
+
+  <!-- Main View Area -->
+  <main class="main-content">
+
+    <!-- 1. CHAT VIEW -->
+    <section id="view-chat" class="view-container active">
+      <div id="chat-history" class="chat-history">
+        <div id="chat-welcome" class="chat-welcome">
+          <div class="welcome-icon">⚡</div>
+          <h2>Ask Anything About Your Codebase</h2>
+          <p>RepoLens searches indexed files, qualified AST methods, docs, and configurations with exact line-range citations.</p>
+          <div class="starter-chips">
+            <button class="chip" data-prompt="What are the main entry points of this repository?">What are the main entry points?</button>
+            <button class="chip" data-prompt="How does route registration work?">How does route registration work?</button>
+            <button class="chip" data-prompt="Explain configuration and environment loading.">Explain configuration loading</button>
+            <button class="chip" data-prompt="How is error handling and exception logging structured?">Explain error handling</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sticky Chat Input Bar -->
+      <div class="chat-input-bar">
+        <div class="input-controls">
+          <button id="btn-toggle-hybrid" class="toggle-chip" title="Toggle Hybrid BM25 + Dense Semantic Vector Search">
+            <span>⚡ Hybrid</span>
+          </button>
+          <span style="font-size: 0.72rem; color: var(--text-muted); margin-left: auto;">Top-K:</span>
+          <select id="select-top-k" class="toggle-chip" style="outline: none;">
+            <option value="3">3 passages</option>
+            <option value="4" selected>4 passages</option>
+            <option value="6">6 passages</option>
+            <option value="8">8 passages</option>
+          </select>
+        </div>
+        <div class="input-box">
+          <textarea id="chat-input" class="chat-input" rows="1" placeholder="Ask a question about the code..."></textarea>
+          <button id="btn-send" class="btn-send" title="Send (Enter)">➔</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. SEARCH VIEW -->
+    <section id="view-search" class="view-container">
+      <div class="search-header">
+        <div class="search-input-box">
+          <span style="font-size: 1.1rem; color: var(--text-muted);">🔍</span>
+          <input id="search-input" class="search-input" type="text" placeholder="Search functions, classes, docs, configs..." />
+          <button id="btn-search-exec" class="btn-primary" style="padding: 6px 14px; font-size: 0.8rem;">Search</button>
+        </div>
+      </div>
+      <div id="search-results" class="search-results-list">
+        <p style="text-align: center; color: var(--text-muted); padding: 40px 0;">Enter a keyword or function name above to search.</p>
+      </div>
+    </section>
+
+    <!-- 3. REPOSITORIES VIEW -->
+    <section id="view-repos" class="view-container">
+      <!-- Ingest Card -->
+      <div class="card-section">
+        <h3 class="card-title">🚀 Ingest New Repository</h3>
+        <p style="font-size: 0.84rem; color: var(--text-secondary); margin-bottom: 14px;">
+          Enter a GitHub URL, shorthand (e.g. <code>pallets/flask</code>), or local directory path.
+        </p>
+        <div class="form-group">
+          <input id="ingest-source" class="form-input" type="text" placeholder="e.g. pallets/flask or https://github.com/..." />
+        </div>
+        <div style="display: flex; gap: 14px; align-items: center; margin-bottom: 14px;">
+          <label style="font-size: 0.8rem; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; cursor: pointer;">
+            <input type="checkbox" id="ingest-python-only" /> Python files only
+          </label>
+          <label style="font-size: 0.8rem; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; cursor: pointer;">
+            <input type="checkbox" id="ingest-force" /> Force re-clone
+          </label>
+        </div>
+        <button id="btn-ingest" class="btn-primary">
+          <span id="btn-ingest-text">Clone & Index Repository</span>
+        </button>
+      </div>
+
+      <!-- Indexed Repos List -->
+      <div class="card-section">
+        <h3 class="card-title">📦 Indexed Repositories</h3>
+        <div id="repos-list">
+          <p style="color: var(--text-muted);">Loading repositories...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. SETTINGS VIEW -->
+    <section id="view-settings" class="view-container">
+      <!-- LLM Provider Selection -->
+      <div class="card-section">
+        <h3 class="card-title">🤖 LLM Provider & Agent</h3>
+        <p style="font-size: 0.84rem; color: var(--text-secondary); margin-bottom: 14px;">
+          Select your active LLM. Switch freely between local daemons and cloud APIs.
+        </p>
+        <div id="provider-grid" class="provider-grid">
+          <!-- Populated dynamically via app.js -->
+        </div>
+
+        <!-- Provider Configuration Form -->
+        <div id="provider-config-box" style="margin-top: 16px; border-top: 1px solid var(--border); padding-top: 16px;">
+          <h4 style="font-size: 0.92rem; margin-bottom: 12px;" id="config-provider-name">Configure Provider</h4>
+          <div class="form-group">
+            <label class="form-label">Model Name</label>
+            <input id="cfg-model" class="form-input" type="text" placeholder="e.g. gpt-4o-mini, qwen2.5-coder:3b, etc." />
+          </div>
+          <div id="cfg-key-group" class="form-group">
+            <label class="form-label">API Key</label>
+            <input id="cfg-key" class="form-input" type="password" placeholder="Enter API key" />
+          </div>
+          <div id="cfg-url-group" class="form-group">
+            <label class="form-label">Endpoint URL (Optional)</label>
+            <input id="cfg-url" class="form-input" type="text" placeholder="http://localhost:..." />
+          </div>
+          <button id="btn-save-provider" class="btn-primary">Save & Activate</button>
+        </div>
+      </div>
+
+      <!-- Mobile / LAN Connection Card -->
+      <div class="card-section">
+        <h3 class="card-title">📱 Phone & Mobile Access</h3>
+        <p style="font-size: 0.84rem; color: var(--text-secondary); margin-bottom: 8px;">
+          To use RepoLens on your smartphone, make sure your phone is connected to the same Wi-Fi and open:
+        </p>
+        <div class="url-box" id="settings-lan-url">http://...</div>
+        <button id="btn-copy-url" class="btn-secondary">📋 Copy Mobile Link</button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Mobile Bottom Navigation Bar -->
+  <nav class="bottom-nav">
+    <button class="bottom-nav-item active" data-tab="chat">
+      <span class="icon">💬</span>
+      <span>Chat</span>
+    </button>
+    <button class="bottom-nav-item" data-tab="search">
+      <span class="icon">🔍</span>
+      <span>Search</span>
+    </button>
+    <button class="bottom-nav-item" data-tab="repos">
+      <span class="icon">📦</span>
+      <span>Repos</span>
+    </button>
+    <button class="bottom-nav-item" data-tab="settings">
+      <span class="icon">⚙️</span>
+      <span>Settings</span>
+    </button>
+  </nav>
+
+  <!-- Phone Pairing Modal -->
+  <div id="modal-lan" class="modal-overlay">
+    <div class="modal-card">
+      <h3 class="modal-title">📱 Open RepoLens on Your Phone</h3>
+      <div class="modal-body">
+        <p>1. Connect your phone to the same Wi-Fi network as this machine.</p>
+        <p style="margin-top: 6px;">2. Open Safari or Chrome on your phone and go to:</p>
+        <div class="url-box" id="modal-lan-url">http://...</div>
+        <p style="margin-top: 6px;">3. <strong>Tip:</strong> Tap <em>Share ➔ Add to Home Screen</em> to use RepoLens like a native mobile app!</p>
+      </div>
+      <div style="display: flex; gap: 10px; justify-content: flex-end;">
+        <button id="btn-modal-copy" class="btn-secondary">Copy Link</button>
+        <button id="btn-modal-close" class="btn-primary">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

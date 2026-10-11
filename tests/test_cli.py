@@ -71,6 +71,16 @@ def test_build_parser_subcommands():
     assert args_mod.command == "model"
     assert args_mod.model_name == "llama3.2"
 
+    # Web / UI
+    args_web = parser.parse_args(["web", "--port", "9000", "--host", "127.0.0.1", "--no-browser"])
+    assert args_web.command == "web"
+    assert args_web.port == 9000
+    assert args_web.host == "127.0.0.1"
+    assert args_web.no_browser is True
+
+    args_ui = parser.parse_args(["ui"])
+    assert args_ui.command == "ui"
+
     # List & Status
     assert parser.parse_args(["list"]).command == "list"
     assert parser.parse_args(["repos"]).command == "repos"

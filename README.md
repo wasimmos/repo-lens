@@ -114,7 +114,23 @@ repolens provider custom --url http://localhost:1234/v1/chat/completions --model
 repolens ask "Explain error handling" --provider openai --model gpt-4o
 ```
 
-### 8. System Status
+### 8. Web & Phone Application (Mobile-Friendly PWA)
+RepoLens includes a zero-dependency, responsive Web and Mobile application that can be used on any desktop browser or mobile phone:
+
+```bash
+repolens web    # aliases: repolens ui, repolens serve, repolens app
+```
+
+When started, it outputs both the desktop and phone LAN access URLs:
+```text
+  💻 Desktop Browser:  http://localhost:8000
+  📱 Phone / LAN URL:  http://192.168.1.X:8000
+```
+- **Phone Access:** Connect your phone to the same Wi-Fi, open the phone URL in Safari or Chrome.
+- **Native Mobile Feel:** Includes a bottom navigation bar (`💬 Chat`, `🔍 Search`, `📦 Repos`, `⚙️ Settings`), touch-optimized controls, and collapsible evidence accordions.
+- **Install on Phone:** Tap *"Add to Home Screen"* in iOS Safari or Android Chrome to install RepoLens as a standalone Progressive Web App (PWA).
+
+### 9. System Status
 ```bash
 repolens status
 ```
@@ -125,6 +141,7 @@ repolens status
 
 | Command | Aliases | Arguments | Description |
 |---|---|---|---|
+| `repolens web` | `ui`, `serve`, `app` | `[--port <p>] [--host <h>] [--no-browser]` | Launch responsive Web & Phone application |
 | `repolens <question>` | | | Ask directly without typing `ask` |
 | `repolens ingest <source>` | `clone`, `add` | `[--force] [--python-only]` | Clone/load, index, and activate repository |
 | `repolens use <repo>` | `select`, `switch` | `<repo_name>` | Set active repository (supports fuzzy match) |
@@ -160,4 +177,4 @@ Run the complete test suite:
 ```bash
 pytest
 ```
-Includes 53 automated tests covering repository loading, multi-format indexing, code tokenization, dense semantic vectors, hybrid RRF retrieval, citation verification with GitHub links, multi-provider LLM integrations, and CLI UX commands.
+Includes 62 automated tests covering repository loading, multi-format indexing, code tokenization, dense semantic vectors, hybrid RRF retrieval, citation verification with GitHub links, multi-provider LLM integrations, web server endpoints, and CLI UX commands.
