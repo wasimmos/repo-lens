@@ -44,6 +44,7 @@ data/indexes/
 data/sample_repo/
 data/*.json
 data/*.npz
+data/.active_repo
 !data/.gitkeep
 
 # OS

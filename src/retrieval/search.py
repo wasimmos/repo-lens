@@ -77,7 +77,8 @@ def list_available_indexes() -> list[str]:
     names: list[str] = []
     if INDEXES_DIR.exists():
         for p in sorted(INDEXES_DIR.glob("*.json")):
-            names.append(p.stem)
+            if not p.stem.endswith("_meta") and not p.stem.endswith("_embeddings"):
+                names.append(p.stem)
 
     if INDEX_FILE.exists() and "default" not in names:
         names.append("default")
