@@ -1,0 +1,14 @@
+[project]
+name = "repolens"
+version = "0.1.0"
+description = "Repository intelligence and RAG Q&A assistant for GitHub repositories"
+authors = [{ name = "RepoLens Team" }]
+dependencies = []
+
+[project.scripts]
+repolens = "src.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["data", ".git", "venv", ".venv"]
+pythonpath = ["."]

@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# RepoLens dynamic runtime data
+data/repos/
+data/indexes/
+data/sample_repo/
+data/index.json
+!data/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
