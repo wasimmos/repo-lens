@@ -172,6 +172,15 @@ def document_text(record: dict[str, Any]) -> str:
     ])
 
 
+def get_record_tokens(record: dict[str, Any]) -> list[str]:
+    """Retrieve pre-tokenized terms for record or compute and cache them."""
+    tokens = record.get("_tokens")
+    if tokens is None:
+        tokens = tokenize(document_text(record), code_aware=True)
+        record["_tokens"] = tokens
+    return tokens
+
+
 def search(
     query: str,
     records: Optional[list[dict[str, Any]]] = None,
@@ -214,11 +223,8 @@ def search(
 
     query_lower = query.lower()
 
-    # Pre-tokenize documents
-    documents = [
-        tokenize(document_text(record), code_aware=True)
-        for record in records
-    ]
+    # Pre-tokenize documents (cached per record for instant multi-query searches)
+    documents = [get_record_tokens(record) for record in records]
 
     document_count = len(documents)
     average_length = (

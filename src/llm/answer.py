@@ -149,6 +149,15 @@ def validate_citations(
     return answer
 
 
+# In-memory query response cache for instant repeated queries
+_ANSWER_CACHE: dict[str, tuple[str, list[tuple[float, dict[str, Any]]]]] = {}
+
+
+def clear_answer_cache() -> None:
+    """Clear the in-memory answer cache."""
+    _ANSWER_CACHE.clear()
+
+
 def build_context(
     results: list[tuple[float, dict[str, Any]]],
     records: Optional[list[dict[str, Any]]] = None,
@@ -166,7 +175,12 @@ def build_context(
 
     unique_files = sorted({r["file"] for r in (records or [rec for _, rec in results])})
     if unique_files:
-        manifest_parts.append(f"Repository Files: {', '.join(unique_files)}")
+        if len(unique_files) > 40:
+            manifest_parts.append(
+                f"Repository Files (showing top 40 of {len(unique_files)}): {', '.join(unique_files[:40])}"
+            )
+        else:
+            manifest_parts.append(f"Repository Files: {', '.join(unique_files)}")
 
     if manifest_parts:
         sections.append("=== Repository Structure & Files ===\n" + "\n".join(manifest_parts))
@@ -174,13 +188,26 @@ def build_context(
     # 2. Retrieved Passages
     passages = []
     for score, record in results:
+        code_text = record.get("code", "")
+        # Compact overly large code passages to prevent prompt token bloat and accelerate prefill
+        if len(code_text) > 2200:
+            lines = code_text.splitlines()
+            if len(lines) > 50:
+                code_text = "\n".join(lines[:50]) + "\n... [truncated for brevity]"
+            else:
+                code_text = code_text[:2200] + "\n... [truncated for brevity]"
+
+        doc = record.get("docstring", "")
+        if len(doc) > 400:
+            doc = doc[:400] + "..."
+
         passages.append(
             f"""Source: {record['file']}:{record['start_line']}-{record['end_line']}
 Symbol: {record.get('kind', 'code')} {record.get('name', 'unnamed')}
 Relevance score: {score:.3f}
-Docstring: {record.get('docstring', '')}
+Docstring: {doc}
 Code:
-{record.get('code', '')}"""
+{code_text}"""
         )
 
     if passages:
@@ -198,10 +225,10 @@ def ask_llm(
     """Format prompt with strict groundedness, code-first synthesis, and citation rules."""
     prompt = f"""You are RepoLens, an expert codebase intelligence assistant.
 
-Answer the user's question accurately using the repository evidence and repository structure provided below.
+Answer the user's question accurately and concisely using the repository evidence and repository structure provided below.
 
 STRICT INSTRUCTIONS:
-1. Direct Answer: Answer the user's question directly in the opening paragraph.
+1. Direct Answer: Answer the user's question directly in the opening paragraph. Be concise and avoid unnecessary fluff.
 2. Code-First Synthesis: Prioritize actual source code implementation (functions, logic, entry points, scripts, pipelines) rather than merely quoting the README. Explain how the code works.
 3. Explicit Handling of Missing Components: If the user asks about a component that does NOT exist in the repository (such as a CI/CD pipeline, Dockerfile, or database), explicitly confirm that it does not exist, and explain what the repository uses instead (e.g. local execution via app.py, Streamlit).
 4. Accurate Citations: Cite every referenced code file and line range using [path:start_line-end_line] or [path] (e.g. [app.py:1-74], [README.md:50-58]).
@@ -238,6 +265,10 @@ def answer_question(
     Returns:
         tuple of (verified_answer, retrieved_results)
     """
+    cache_key = f"{repo_id or 'default'}::{question.strip().lower()}::{model or ''}::{provider or ''}::{top_k}::{hybrid}"
+    if cache_key in _ANSWER_CACHE:
+        return _ANSWER_CACHE[cache_key]
+
     if records is None:
         records = load_index(repo_id=repo_id)
 
@@ -262,6 +293,7 @@ def answer_question(
         raw_answer, results, web_url=active_url, branch=active_branch, records=records
     )
 
+    _ANSWER_CACHE[cache_key] = (final_answer, results)
     return final_answer, results
 
 

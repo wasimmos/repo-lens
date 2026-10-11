@@ -347,7 +347,11 @@ def _call_ollama(
             {"role": "user", "content": prompt},
         ],
         "stream": False,
-        "options": {"temperature": temperature},
+        "keep_alive": "15m",
+        "options": {
+            "temperature": temperature,
+            "num_predict": 1024,
+        },
     }
     req = urllib.request.Request(
         url,
@@ -389,6 +393,7 @@ def _call_openai_compatible(
             {"role": "user", "content": prompt},
         ],
         "temperature": temperature,
+        "max_tokens": 1024,
     }
     req = urllib.request.Request(
         url,
@@ -422,7 +427,7 @@ def _call_anthropic(
     }
     payload = {
         "model": model,
-        "max_tokens": 4096,
+        "max_tokens": 1024,
         "system": system_prompt,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": temperature,
@@ -460,7 +465,10 @@ def _call_gemini(
     payload = {
         "system_instruction": {"parts": [{"text": system_prompt}]},
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": temperature},
+        "generationConfig": {
+            "temperature": temperature,
+            "maxOutputTokens": 1024,
+        },
     }
     req = urllib.request.Request(
         url,
