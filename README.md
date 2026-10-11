@@ -84,7 +84,37 @@ repolens chat    # alias: repolens talk
 ```
 Inside chat, you can switch repositories, toggle hybrid search, or view loaded indexes on the fly using `/use <repo>`, `/hybrid`, `/list`, or `/exit`.
 
-### 7. System Status
+### 7. Switch LLM Providers & Agents (Local & Cloud)
+RepoLens supports switching between local models and any cloud LLM with zero external dependencies:
+
+```bash
+# View all available providers and current status
+repolens provider    # aliases: repolens agent, repolens llm
+
+# Switch to local Ollama model
+repolens provider ollama
+repolens model qwen2.5-coder:3b   # or llama3.2, deepseek-r1:7b, etc.
+
+# Switch to cloud OpenAI
+repolens provider openai --api-key sk-... --model gpt-4o-mini
+
+# Switch to Anthropic Claude
+repolens provider anthropic --api-key sk-ant-... --model claude-3-5-sonnet-latest
+
+# Switch to Google Gemini
+repolens provider gemini --api-key AIza... --model gemini-1.5-flash
+
+# Switch to DeepSeek
+repolens provider deepseek --api-key sk-... --model deepseek-chat
+
+# Switch to any local OpenAI-compatible endpoint (LM Studio, vLLM, Jan)
+repolens provider custom --url http://localhost:1234/v1/chat/completions --model local-model
+
+# One-off override for a single question:
+repolens ask "Explain error handling" --provider openai --model gpt-4o
+```
+
+### 8. System Status
 ```bash
 repolens status
 ```
@@ -98,23 +128,29 @@ repolens status
 | `repolens <question>` | | | Ask directly without typing `ask` |
 | `repolens ingest <source>` | `clone`, `add` | `[--force] [--python-only]` | Clone/load, index, and activate repository |
 | `repolens use <repo>` | `select`, `switch` | `<repo_name>` | Set active repository (supports fuzzy match) |
-| `repolens ask <question>` | | `[--repo <id>] [--model <m>] [--top-k <k>] [--hybrid]` | Single-shot Q&A with clickable citations (quotes optional) |
-| `repolens chat` | `talk`, `interactive` | `[--repo <id>] [--model <m>] [--top-k <k>] [--hybrid]` | Interactive terminal chat |
-| `repolens search <query>` | | `[--repo <id>] [--top-k <k>] [--hybrid]` | Lexical or Hybrid BM25+LSI search (quotes optional) |
+| `repolens ask <question>` | | `[--repo <id>] [--provider <p>] [--model <m>] [--hybrid]` | Single-shot Q&A with clickable citations |
+| `repolens chat` | `talk`, `interactive` | `[--repo <id>] [--provider <p>] [--model <m>] [--hybrid]` | Interactive terminal chat |
+| `repolens provider [name]` | `agent`, `llm` | `[--model <m>] [--api-key <k>] [--url <u>]` | View, switch, or configure LLM providers |
+| `repolens model [name]` | | `[--provider <p>]` | View or switch active LLM model |
+| `repolens search <query>` | | `[--repo <id>] [--top-k <k>] [--hybrid]` | Lexical or Hybrid BM25+LSI search |
 | `repolens list` | `ls`, `repos` | | List cached repositories with active indicator |
 | `repolens remove <repo>` | `rm`, `delete` | `<repo_id>` | Remove cached repository and index files |
-| `repolens status` | | | Check Ollama and system status |
+| `repolens status` | | | Check system and active LLM status |
 
 ---
 
-## Configuration
+## Supported LLM Providers
 
-You can configure the LLM provider using environment variables:
-
-| Variable | Default | Description |
-|---|---|---|
-| `OLLAMA_MODEL` | `qwen2.5-coder:3b` | Target Ollama model |
-| `OLLAMA_URL` | `http://localhost:11434/api/chat` | Ollama API chat endpoint |
+| Provider | Type | Default Model | Environment Variables |
+|---|---|---|---|
+| `ollama` | Local | `qwen2.5-coder:3b` | `OLLAMA_MODEL`, `OLLAMA_URL` |
+| `openai` | Cloud | `gpt-4o-mini` | `OPENAI_API_KEY` |
+| `anthropic` | Cloud | `claude-3-5-sonnet-latest` | `ANTHROPIC_API_KEY` |
+| `gemini` | Cloud | `gemini-1.5-flash` | `GEMINI_API_KEY`, `GOOGLE_API_KEY` |
+| `deepseek` | Cloud | `deepseek-chat` | `DEEPSEEK_API_KEY` |
+| `groq` | Cloud | `llama-3.3-70b-versatile` | `GROQ_API_KEY` |
+| `openrouter` | Cloud | `openai/gpt-4o-mini` | `OPENROUTER_API_KEY` |
+| `custom` | Local/Custom | `local-model` | `CUSTOM_LLM_API_KEY` |
 
 ---
 
@@ -124,4 +160,4 @@ Run the complete test suite:
 ```bash
 pytest
 ```
-Includes 42 automated tests covering repository loading, multi-format indexing, code tokenization, dense semantic vectors, hybrid RRF retrieval, citation verification with GitHub links, and CLI UX commands.
+Includes 53 automated tests covering repository loading, multi-format indexing, code tokenization, dense semantic vectors, hybrid RRF retrieval, citation verification with GitHub links, multi-provider LLM integrations, and CLI UX commands.

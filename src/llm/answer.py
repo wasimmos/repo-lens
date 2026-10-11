@@ -127,10 +127,11 @@ Code:
     return "\n---\n".join(passages)
 
 
-def ask_ollama(
+def ask_llm(
     question: str,
     context: str,
     model: Optional[str] = None,
+    provider: Optional[str] = None,
 ) -> str:
     """Format prompt with strict groundedness rules and query LLM."""
     prompt = f"""You are RepoLens, a codebase intelligence assistant.
@@ -158,7 +159,11 @@ User question:
 
 Write a concise answer with a Sources section at the end.
 """
-    return generate_answer(prompt, model=model)
+    return generate_answer(prompt, model=model, provider=provider)
+
+
+# Backward-compatibility alias for tests and existing callers
+ask_ollama = ask_llm
 
 
 def answer_question(
@@ -169,6 +174,7 @@ def answer_question(
     model: Optional[str] = None,
     web_url: Optional[str] = None,
     hybrid: bool = False,
+    provider: Optional[str] = None,
 ) -> tuple[str, list[tuple[float, dict[str, Any]]]]:
     """Complete pipeline: search index -> build context -> query LLM -> validate citations.
 
@@ -191,7 +197,7 @@ def answer_question(
         )
 
     context = build_context(results)
-    raw_answer = ask_ollama(question, context, model=model)
+    raw_answer = ask_ollama(question, context, model=model, provider=provider)
     final_answer = validate_citations(
         raw_answer, results, web_url=active_url, branch=active_branch
     )

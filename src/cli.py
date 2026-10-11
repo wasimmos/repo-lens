@@ -1,7 +1,15 @@
-"""RepoLens CLI - Unified Command Line Interface for GitHub Codebase RAG.
+"""Command-line interface for RepoLens repository intelligence and RAG Q&A.
 
-Provides user-friendly commands to clone, index, search, ask questions, and chat with
-any GitHub or local repository.
+Provides user-friendly commands:
+  repolens ingest <source>        - Load and index a repository
+  repolens ask <question>         - Grounded Q&A with clickable source links
+  repolens chat                   - Interactive multi-turn chat session
+  repolens search <query>         - Search code and documentation passages
+  repolens use <repo_name>        - Set default repository
+  repolens provider [name]        - Switch or configure LLM provider (aliases: agent, llm)
+  repolens model [model_name]     - Switch active LLM model
+  repolens list                   - List cached repositories and indexes
+  repolens status                 - Check system and provider health
 """
 
 from __future__ import annotations
@@ -20,7 +28,18 @@ if str(PROJECT_DIR) not in sys.path:
 from src.ingestion.indexer import INDEXES_DIR, get_repo_metadata, index_repository
 from src.ingestion.repo_loader import DEFAULT_STORAGE_DIR, list_cached_repos, load_repository
 from src.llm.answer import answer_question
-from src.llm.provider import MODEL, OLLAMA_URL, check_ollama_available
+from src.llm.provider import (
+    MODEL,
+    OLLAMA_URL,
+    SUPPORTED_PROVIDERS,
+    check_ollama_available,
+    check_provider_status,
+    get_active_model,
+    get_active_provider,
+    list_providers,
+    set_active_model,
+    set_active_provider,
+)
 from src.retrieval.search import display_results, list_available_indexes, load_index, search
 
 ACTIVE_REPO_FILE = PROJECT_DIR / "data" / ".active_repo"
@@ -70,91 +89,88 @@ def resolve_repo_id(requested: Optional[str]) -> tuple[str, str]:
     available = list_available_indexes()
 
     if requested:
-        req_clean = requested.strip()
-        # Direct match
-        if req_clean in available:
-            return req_clean, req_clean
-        # Prefix or substring match (e.g. 'flask' -> 'pallets_flask' or 'sample_repo')
-        for av in available:
-            if req_clean.lower() in av.lower():
-                return av, av
-        return req_clean, req_clean
+        req = requested.strip()
+        if req in available:
+            return req, req
+        # Fuzzy / prefix matching
+        matches = [idx for idx in available if req.lower() in idx.lower()]
+        if len(matches) == 1:
+            return matches[0], matches[0]
+        elif len(matches) > 1:
+            # Prefer exact match prefix
+            for m in matches:
+                if m.lower().startswith(req.lower()):
+                    return m, m
+            return matches[0], matches[0]
+        return req, req
 
-    # Fall back to active repo
+    # Fallback to active repository
     active = get_active_repo()
     if active and active in available:
         return active, f"{active} (active)"
 
-    # If only one repository exists, use it automatically
-    if len(available) == 1 and available[0] != "default":
-        return available[0], available[0]
+    # Fallback to most recent or sample_repo
+    if "sample_repo" in available:
+        return "sample_repo", "sample_repo (default)"
+    if available:
+        return available[0], f"{available[0]} (latest)"
 
-    # Global default
-    return "default", "global index"
+    return "default", "default"
 
 
 def get_source_link(
-    rec: dict,
+    record: dict[str, Any],
     web_url: Optional[str] = None,
-    branch: str = "main",
+    branch: Optional[str] = "main",
     repo_path: Optional[str] = None,
-) -> tuple[str, str]:
-    """Return (direct_url, osc8_terminal_link) for a record."""
-    file_path = rec.get("file", "")
-    start = rec.get("start_line", 1)
-    end = rec.get("end_line", 1)
-    loc = f"{file_path}:{start}-{end}"
+) -> tuple[Optional[str], str]:
+    """Build clickable terminal link and display string for a result record."""
+    file_path = record.get("file", "")
+    start = record.get("start_line", 1)
+    end = record.get("end_line", start)
+    term_loc = f"{file_path}:{start}-{end}"
 
-    link = ""
     if web_url:
         clean_base = web_url.rstrip("/")
-        link = f"{clean_base}/blob/{branch}/{file_path}#L{start}-L{end}"
-    elif repo_path:
-        abs_p = (Path(repo_path) / file_path).resolve()
-        link = f"file://{abs_p}#L{start}"
+        active_branch = branch or "main"
+        url = f"{clean_base}/blob/{active_branch}/{file_path}#L{start}-L{end}"
+        return url, term_loc
 
-    terminal_loc = f"\033]8;;{link}\033\\{loc}\033]8;;\033\\" if link else loc
-    return link, terminal_loc
+    if repo_path:
+        abs_p = Path(repo_path) / file_path
+        file_url = f"file://{abs_p.resolve()}"
+        return file_url, term_loc
+
+    return None, term_loc
 
 
 def cmd_ingest(args: argparse.Namespace) -> None:
     """Clone/load and index a repository."""
     source = args.source.strip()
-    print(f"\n{Style.BOLD}🔍 Ingesting repository:{Style.RESET} {Style.CYAN}{source}{Style.RESET}")
+    print(f"\n{Style.BOLD}🚀 Ingesting repository:{Style.RESET} {Style.CYAN}{source}{Style.RESET}")
 
-    try:
-        info = load_repository(source, force_clone=args.force)
-    except Exception as err:
-        print(f"\n{Style.RED}✖ Failed to load repository:{Style.RESET} {err}")
-        return
+    repo_id, repo_path, branch, web_url = load_repository(source, force=args.force)
+    print(f"✔ Repository loaded at: {repo_path}")
+    if web_url:
+        print(f"✔ Remote GitHub URL:    {web_url} (branch: {branch})")
 
-    print(f"  {Style.DIM}↳ Cached at:{Style.RESET} {info.path}")
-    print(f"  {Style.DIM}↳ ID:{Style.RESET} {info.id} | {Style.DIM}Branch:{Style.RESET} {info.branch or 'main'}")
+    print(f"\n⚡ Indexing source code, markdown, and config files...")
+    records = index_repository(
+        repo_path,
+        repo_id=repo_id,
+        python_only=args.python_only,
+        web_url=web_url,
+        branch=branch,
+    )
+    print(f"{Style.GREEN}✔ Successfully indexed {len(records)} passages for [{repo_id}]{Style.RESET}")
 
-    print(f"\n{Style.YELLOW}⚡ Parsing files and building index...{Style.RESET}")
-    index_file, records, stats = index_repository(info, include_all_files=not args.python_only)
-
-    # Set as active repository
-    set_active_repo(info.id)
-
-    print(f"\n{Style.GREEN}✔ Ingestion successful!{Style.RESET}")
-    print(f"  • Repository ID:  {Style.BOLD}{stats['repo_id']}{Style.RESET} {Style.GREEN}(set as active){Style.RESET}")
-    print(f"  • Files scanned:  {stats['scanned_files']}")
-    print(f"  • Total passages: {stats['total_records']}")
-    print(f"  • Index saved to: {index_file}")
-
-    print(f"\n{Style.BOLD}File breakdown:{Style.RESET}")
-    for ext, count in stats["file_types"].items():
-        print(f"  • {ext:12}: {count} files")
-
-    print(f"\n{Style.DIM}💡 Next steps:{Style.RESET}")
-    print(f"  Ask a question:  {Style.CYAN}repolens ask \"Explain the project structure\"{Style.RESET}")
-    print(f"  Start a chat:    {Style.CYAN}repolens chat{Style.RESET}")
-    print(f"  Search symbols:  {Style.CYAN}repolens search main{Style.RESET}\n")
+    # Set as active repository automatically
+    set_active_repo(repo_id)
+    print(f"{Style.DIM}✔ Set as active repository for future queries.{Style.RESET}\n")
 
 
 def cmd_search(args: argparse.Namespace) -> None:
-    """Search code and documentation passages in an indexed repository."""
+    """Search code and documentation passages."""
     query = " ".join(args.query) if isinstance(args.query, list) else args.query
     if not query.strip():
         print(f"{Style.RED}Please provide a search query.{Style.RESET}")
@@ -163,9 +179,10 @@ def cmd_search(args: argparse.Namespace) -> None:
     repo_id, repo_desc = resolve_repo_id(args.repo)
     records = load_index(repo_id=repo_id)
     meta = get_repo_metadata(repo_id)
-    mode_desc = "hybrid (BM25 + LSI)" if getattr(args, "hybrid", False) else "BM25"
 
-    print(f"\n{Style.BOLD}🔍 Searching [{repo_desc}]{Style.RESET} ({len(records)} passages | {mode_desc}) for: '{Style.CYAN}{query}{Style.RESET}'")
+    mode = "Hybrid BM25+LSI" if getattr(args, "hybrid", False) else "BM25"
+    print(f"\n🔍 Searching [{repo_desc}] ({len(records)} passages | {mode}) for: '{Style.CYAN}{query}{Style.RESET}'")
+
     results = search(query, records, top_k=args.top_k, hybrid=getattr(args, "hybrid", False))
     display_results(results, meta=meta)
 
@@ -178,14 +195,15 @@ def cmd_ask(args: argparse.Namespace) -> None:
         return
 
     repo_id, repo_desc = resolve_repo_id(args.repo)
-    model = args.model or MODEL
+    provider = getattr(args, "provider", None) or get_active_provider()
+    model = args.model or get_active_model(provider)
 
     meta = get_repo_metadata(repo_id)
     web_url = meta.get("web_url")
     branch = meta.get("branch", "main")
     repo_path = meta.get("repo_path")
 
-    print(f"\n{Style.BOLD}🤖 Querying [{repo_desc}]{Style.RESET} using model '{Style.CYAN}{model}{Style.RESET}'...")
+    print(f"\n{Style.BOLD}🤖 Querying [{repo_desc}]{Style.RESET} using {Style.CYAN}{provider}{Style.RESET} ('{Style.CYAN}{model}{Style.RESET}')...")
 
     try:
         answer, results = answer_question(
@@ -193,6 +211,7 @@ def cmd_ask(args: argparse.Namespace) -> None:
             repo_id=repo_id,
             top_k=args.top_k,
             model=model,
+            provider=provider,
             hybrid=getattr(args, "hybrid", False),
         )
     except Exception as err:
@@ -216,7 +235,8 @@ def cmd_ask(args: argparse.Namespace) -> None:
 def cmd_chat(args: argparse.Namespace) -> None:
     """Interactive multi-turn Q&A terminal loop."""
     repo_id, repo_desc = resolve_repo_id(args.repo)
-    model = args.model or MODEL
+    provider = getattr(args, "provider", None) or get_active_provider()
+    model = args.model or get_active_model(provider)
     records = load_index(repo_id=repo_id)
     meta = get_repo_metadata(repo_id)
     web_url = meta.get("web_url")
@@ -226,8 +246,8 @@ def cmd_chat(args: argparse.Namespace) -> None:
 
     print(f"\n{Style.BOLD}=== RepoLens Interactive Chat ==={Style.RESET}")
     print(f"Target repository: {Style.CYAN}[{repo_desc}]{Style.RESET} ({len(records)} passages)")
-    print(f"Active LLM:        {model}")
-    print(f"{Style.DIM}Commands: /use <repo>, /list, /hybrid, /exit{Style.RESET}\n")
+    print(f"Active Provider:   {Style.CYAN}{provider}{Style.RESET} (Model: {Style.BOLD}{model}{Style.RESET})")
+    print(f"{Style.DIM}Commands: /use <repo>, /provider [name], /model [name], /hybrid, /exit{Style.RESET}\n")
 
     while True:
         try:
@@ -250,10 +270,12 @@ def cmd_chat(args: argparse.Namespace) -> None:
 
             if cmd in {"/help"}:
                 print("\nIn-chat commands:")
-                print("  /use <repo>     Switch active repository")
-                print("  /list           List available repositories")
-                print("  /hybrid         Toggle hybrid search on/off")
-                print("  /exit, /quit    Leave chat session\n")
+                print("  /use <repo>             Switch active repository")
+                print("  /list, /repos           List available repositories")
+                print("  /provider [name] [mod]  View or switch LLM provider")
+                print("  /model [name]           View or switch active model")
+                print("  /hybrid                 Toggle hybrid search on/off")
+                print("  /exit, /quit            Leave chat session\n")
                 continue
             elif cmd in {"/use", "/repo"}:
                 if not arg:
@@ -281,6 +303,36 @@ def cmd_chat(args: argparse.Namespace) -> None:
                     print(f"  • {idx} {star}")
                 print()
                 continue
+            elif cmd in {"/provider", "/agent", "/llm"}:
+                if not arg:
+                    # List providers
+                    providers = list_providers()
+                    print("\nAvailable LLM Providers:")
+                    for p in providers:
+                        mark = f"{Style.GREEN}* (active){Style.RESET}" if p["name"] == provider else ""
+                        print(f"  • {p['name']:<12} {p['model']} {mark}")
+                    print()
+                else:
+                    prov_parts = arg.split(maxsplit=1)
+                    new_p = prov_parts[0].lower()
+                    new_m = prov_parts[1].strip() if len(prov_parts) > 1 else None
+                    if new_p in SUPPORTED_PROVIDERS:
+                        set_active_provider(new_p, model=new_m)
+                        provider = new_p
+                        model = get_active_model(new_p)
+                        print(f"{Style.GREEN}✔ Switched LLM provider to '{provider}' (model: {model}){Style.RESET}\n")
+                    else:
+                        valid = ", ".join(SUPPORTED_PROVIDERS.keys())
+                        print(f"{Style.RED}Unknown provider '{new_p}'. Supported: {valid}{Style.RESET}\n")
+                continue
+            elif cmd in {"/model"}:
+                if not arg:
+                    print(f"Current model: {model} (provider: {provider})\n")
+                else:
+                    set_active_model(arg, provider_name=provider)
+                    model = arg
+                    print(f"{Style.GREEN}✔ Switched model to: {model}{Style.RESET}\n")
+                continue
             elif cmd in {"/hybrid"}:
                 hybrid = not hybrid
                 state = f"{Style.GREEN}ON{Style.RESET}" if hybrid else f"{Style.YELLOW}OFF{Style.RESET}"
@@ -296,6 +348,7 @@ def cmd_chat(args: argparse.Namespace) -> None:
                 records=records,
                 top_k=args.top_k,
                 model=model,
+                provider=provider,
                 hybrid=hybrid,
                 web_url=web_url,
             )
@@ -329,6 +382,83 @@ def cmd_use(args: argparse.Namespace) -> None:
     set_active_repo(resolved_id)
     print(f"{Style.GREEN}✔ Active repository set to:{Style.RESET} {Style.BOLD}{resolved_id}{Style.RESET}")
     print(f"Future queries will target this repository by default.")
+
+
+def cmd_provider(args: argparse.Namespace) -> None:
+    """Manage and switch LLM providers/agents."""
+    if args.name:
+        target = args.name.lower()
+        if target not in SUPPORTED_PROVIDERS:
+            matches = [k for k in SUPPORTED_PROVIDERS if target in k]
+            if len(matches) == 1:
+                target = matches[0]
+            else:
+                valid = ", ".join(SUPPORTED_PROVIDERS.keys())
+                print(f"{Style.RED}Unknown provider '{args.name}'. Supported: {valid}{Style.RESET}")
+                return
+
+        set_active_provider(
+            target,
+            model=args.model,
+            api_key=args.api_key,
+            url=args.url,
+        )
+        spec = SUPPORTED_PROVIDERS[target]
+        active_m = get_active_model(target)
+        print(f"{Style.GREEN}✔ Switched active provider to '{target}' ({spec.display_name}){Style.RESET}")
+        print(f"  Model: {Style.CYAN}{active_m}{Style.RESET}")
+        if args.url:
+            print(f"  Endpoint URL: {args.url}")
+        if args.api_key:
+            print(f"  API key: Saved")
+        print()
+        return
+
+    # No arguments given: Display all providers
+    providers = list_providers()
+    active_p = get_active_provider()
+    active_m = get_active_model(active_p)
+
+    print(f"\n{Style.BOLD}=== RepoLens LLM Providers & Agents ==={Style.RESET}")
+    print(f"Active Provider: {Style.CYAN}{active_p}{Style.RESET} (Model: {Style.BOLD}{active_m}{Style.RESET})\n")
+
+    for p in providers:
+        name = p["name"]
+        is_active = p["is_active"]
+        active_badge = f"{Style.GREEN}✔ [active]{Style.RESET}" if is_active else "○         "
+        type_badge = f"{Style.YELLOW}Cloud{Style.RESET}" if p["is_cloud"] else f"{Style.CYAN}Local{Style.RESET}"
+
+        status_info = ""
+        if p["is_cloud"]:
+            status_info = f"Key: {Style.GREEN}Configured{Style.RESET}" if p["has_key"] else f"Key: {Style.RED}Missing ({p['env_keys'][0]}){Style.RESET}"
+        else:
+            if name == "ollama":
+                is_on, msg = check_ollama_available()
+                status_info = f"Status: {Style.GREEN}Online{Style.RESET}" if is_on else f"Status: {Style.RED}Offline{Style.RESET}"
+            else:
+                status_info = f"URL: {p['url']}"
+
+        print(f"  {active_badge} {Style.BOLD}{name:<12}{Style.RESET} [{type_badge}] {p['display_name']}")
+        print(f"             ↳ Model: {p['model']} | {status_info}")
+        print(f"             ↳ {Style.DIM}{p['description']}{Style.RESET}")
+
+    print(f"\n{Style.BOLD}Quick Commands:{Style.RESET}")
+    print(f"  Switch provider: {Style.CYAN}repolens provider <name>{Style.RESET}")
+    print(f"  Switch model:    {Style.CYAN}repolens model <model_name>{Style.RESET}")
+    print(f"  Configure:       {Style.CYAN}repolens provider <name> --api-key <KEY> [--model <MODEL>]{Style.RESET}\n")
+
+
+def cmd_model(args: argparse.Namespace) -> None:
+    """View or change active LLM model."""
+    provider = args.provider or get_active_provider()
+    if args.model_name:
+        set_active_model(args.model_name, provider_name=provider)
+        print(f"{Style.GREEN}✔ Active model for provider '{provider}' set to: {args.model_name}{Style.RESET}\n")
+    else:
+        current_model = get_active_model(provider)
+        print(f"\nProvider: {Style.CYAN}{provider}{Style.RESET}")
+        print(f"Model:    {Style.BOLD}{current_model}{Style.RESET}\n")
+        print(f"To change: {Style.DIM}repolens model <new_model_name>{Style.RESET}\n")
 
 
 def cmd_list(args: argparse.Namespace) -> None:
@@ -388,17 +518,18 @@ def cmd_remove(args: argparse.Namespace) -> None:
 
 def cmd_status(args: argparse.Namespace) -> None:
     """Check system and provider status."""
-    is_online, msg = check_ollama_available()
-    active = get_active_repo() or "None"
+    active_p = get_active_provider()
+    active_m = get_active_model(active_p)
+    is_ready, p_msg = check_provider_status(active_p)
+    active_repo = get_active_repo() or "None"
 
     print(f"\n{Style.BOLD}=== RepoLens System Status ==={Style.RESET}")
-    print(f"  • Python:        {sys.version.split()[0]}")
-    print(f"  • Active repo:   {Style.CYAN}{active}{Style.RESET}")
-    print(f"  • Project root:  {PROJECT_DIR}")
-    print(f"  • Ollama URL:    {OLLAMA_URL}")
-    print(f"  • Default model: {MODEL}")
-    status_str = f"{Style.GREEN}ONLINE{Style.RESET}" if is_online else f"{Style.RED}OFFLINE{Style.RESET}"
-    print(f"  • Ollama status: {status_str} - {msg}\n")
+    print(f"  • Python:          {sys.version.split()[0]}")
+    print(f"  • Active repo:     {Style.CYAN}{active_repo}{Style.RESET}")
+    print(f"  • Active Provider: {Style.BOLD}{active_p}{Style.RESET} (model: {Style.CYAN}{active_m}{Style.RESET})")
+    status_str = f"{Style.GREEN}ONLINE / READY{Style.RESET}" if is_ready else f"{Style.RED}UNAVAILABLE{Style.RESET}"
+    print(f"  • LLM status:      {status_str} - {p_msg}")
+    print(f"  • Project root:    {PROJECT_DIR}\n")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -415,8 +546,11 @@ Examples:
   repolens chat                               Start interactive chat with active repo
   repolens search route                       Search code and documentation
   repolens use pallets_flask                  Set default repository
+  repolens provider                           List all supported LLM providers
+  repolens provider openai                    Switch to OpenAI provider
+  repolens model llama3.2                     Switch model for current provider
   repolens list                               List all indexed repositories
-  repolens status                             Check Ollama and system status
+  repolens status                             Check provider and system status
 """,
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -425,7 +559,7 @@ Examples:
     p_ingest = subparsers.add_parser(
         "ingest",
         aliases=["clone", "add", "load"],
-        help="Clone/load and index a repository (aliases: clone, add)",
+        help="Clone/load and index a repository (aliases: clone, add, load)",
     )
     p_ingest.add_argument("source", help="GitHub URL, owner/repo shorthand, or local directory path")
     p_ingest.add_argument("--force", action="store_true", help="Force re-clone if already cached")
@@ -439,6 +573,7 @@ Examples:
     )
     p_ask.add_argument("question", nargs="+", help="Question about the repository (quotes optional)")
     p_ask.add_argument("--repo", "-r", default=None, help="Repository ID (defaults to active repo)")
+    p_ask.add_argument("--provider", "-p", default=None, help="LLM provider override (e.g. ollama, openai, anthropic, gemini)")
     p_ask.add_argument("--model", "-m", default=None, help="LLM model override")
     p_ask.add_argument("--top-k", "-k", type=int, default=4, help="Retrieved passages count")
     p_ask.add_argument("--hybrid", action="store_true", help="Use hybrid BM25 + dense semantic vector search")
@@ -462,10 +597,37 @@ Examples:
         help="Start an interactive chat session (aliases: talk, interactive)",
     )
     p_chat.add_argument("--repo", "-r", default=None, help="Repository ID (defaults to active repo)")
+    p_chat.add_argument("--provider", "-p", default=None, help="LLM provider override")
     p_chat.add_argument("--model", "-m", default=None, help="LLM model override")
     p_chat.add_argument("--top-k", "-k", type=int, default=4, help="Retrieved passages count")
     p_chat.add_argument("--hybrid", action="store_true", help="Use hybrid BM25 + dense semantic vector search")
     p_chat.set_defaults(func=cmd_chat)
+
+    # Provider / Agent / LLM
+    p_prov = subparsers.add_parser(
+        "provider",
+        aliases=["agent", "llm"],
+        help="Manage and switch LLM providers/agents (aliases: agent, llm)",
+    )
+    p_prov.add_argument(
+        "name",
+        nargs="?",
+        default=None,
+        help="Provider name to activate (e.g. ollama, openai, anthropic, gemini, deepseek, groq, openrouter, custom)",
+    )
+    p_prov.add_argument("--model", "-m", default=None, help="Model name for provider")
+    p_prov.add_argument("--api-key", "-k", default=None, help="API key for cloud provider")
+    p_prov.add_argument("--url", "-u", default=None, help="Endpoint URL for provider")
+    p_prov.set_defaults(func=cmd_provider)
+
+    # Model
+    p_mod = subparsers.add_parser(
+        "model",
+        help="View or change active LLM model",
+    )
+    p_mod.add_argument("model_name", nargs="?", default=None, help="New model name (optional)")
+    p_mod.add_argument("--provider", "-p", default=None, help="Target provider (defaults to active provider)")
+    p_mod.set_defaults(func=cmd_model)
 
     # Use / Select / Switch
     p_use = subparsers.add_parser(
@@ -496,7 +658,7 @@ Examples:
     # Status
     p_status = subparsers.add_parser(
         "status",
-        help="Check system status and Ollama availability",
+        help="Check system and LLM provider status",
     )
     p_status.set_defaults(func=cmd_status)
 
@@ -520,6 +682,8 @@ def main() -> None:
         "use", "select", "switch",
         "list", "ls", "repos",
         "remove", "rm", "delete",
+        "provider", "agent", "llm",
+        "model",
         "status",
         "-h", "--help", "-v", "--version",
     }
