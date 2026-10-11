@@ -536,10 +536,12 @@ def cmd_web(args: argparse.Namespace) -> None:
     """Launch the mobile-friendly RepoLens Web & Phone application."""
     from src.web.server import run_server
 
+    is_cloud = getattr(args, "cloud", False) or getattr(args, "command", "") in {"cloud", "share"}
     run_server(
         host=args.host,
         port=args.port,
         open_browser=not args.no_browser,
+        cloud_tunnel=is_cloud,
     )
 
 
@@ -551,6 +553,8 @@ def build_parser() -> argparse.ArgumentParser:
         epilog="""
 Examples:
   repolens web                                Launch mobile & web application
+  repolens web --cloud                        Launch with instant public HTTPS cloud URL
+  repolens cloud                              Shorthand for cloud website
   repolens ingest pallets/flask               Clone and index a GitHub repository
   repolens ask "How does routing work?"       Ask a question with verified citations
   repolens ask How does routing work?         Quotes are optional!
@@ -567,14 +571,15 @@ Examples:
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
-    # Web / UI / Serve
+    # Web / UI / Serve / Cloud
     p_web = subparsers.add_parser(
         "web",
-        aliases=["ui", "serve", "app"],
-        help="Launch the mobile-friendly Web & Phone application (aliases: ui, serve, app)",
+        aliases=["ui", "serve", "app", "cloud", "share"],
+        help="Launch Web & Phone application (aliases: ui, serve, app, cloud, share)",
     )
     p_web.add_argument("--host", "-H", default="0.0.0.0", help="Host interface to bind (default: 0.0.0.0)")
     p_web.add_argument("--port", "-p", type=int, default=8000, help="Port to listen on (default: 8000)")
+    p_web.add_argument("--cloud", "-c", "--tunnel", dest="cloud", action="store_true", help="Generate public HTTPS cloud URL for worldwide access")
     p_web.add_argument("--no-browser", action="store_true", help="Do not open desktop browser automatically")
     p_web.set_defaults(func=cmd_web)
 
@@ -707,7 +712,7 @@ def main() -> None:
         "remove", "rm", "delete",
         "provider", "agent", "llm",
         "model",
-        "web", "ui", "serve", "app",
+        "web", "ui", "serve", "app", "cloud", "share",
         "status",
         "-h", "--help", "-v", "--version",
     }

@@ -145,9 +145,12 @@
       elements.labelActiveRepo.textContent = data.active_repo || "No repo selected";
       elements.labelActiveProvider.textContent = `${data.active_provider} (${data.active_model})`;
 
-      const mobileUrl = `http://${data.lan_ip}:${data.server_port}`;
-      elements.settingsLanUrl.textContent = mobileUrl;
-      elements.modalLanUrl.textContent = mobileUrl;
+      const primaryUrl = data.public_url || `http://${data.lan_ip}:${data.server_port}`;
+      elements.settingsLanUrl.textContent = primaryUrl;
+      elements.modalLanUrl.textContent = primaryUrl;
+      if (data.public_url) {
+        elements.btnPhone.title = `Cloud URL Live: ${data.public_url}`;
+      }
     } catch (err) {
       console.error("Status load error:", err);
     }

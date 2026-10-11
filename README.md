@@ -114,20 +114,32 @@ repolens provider custom --url http://localhost:1234/v1/chat/completions --model
 repolens ask "Explain error handling" --provider openai --model gpt-4o
 ```
 
-### 8. Web & Phone Application (Mobile-Friendly PWA)
-RepoLens includes a zero-dependency, responsive Web and Mobile application that can be used on any desktop browser or mobile phone:
+### 8. Web & Phone Application (Local & Cloud Website)
+RepoLens includes a zero-dependency, responsive Web and Mobile application that can be run locally or as a **public Cloud Website**:
 
+#### A. Instant Cloud Website (Zero Setup, Accessible Worldwide)
+Generate an instant, secure public HTTPS cloud link that works on any phone or computer anywhere in the world on mobile data (4G/5G/Wi-Fi):
+```bash
+repolens web --cloud    # or simply: repolens cloud
+```
+Outputs a public HTTPS URL:
+```text
+  🌐 Public Cloud URL:  https://xxxx.lhr.life
+  📱 Mobile Access:     Open the link above on ANY phone worldwide
+  💻 Localhost URL:     http://localhost:8000
+```
+
+#### B. Permanent 24/7 Cloud Hosting
+RepoLens includes out-of-the-box configuration files for 100% free cloud hosting:
+- **Render (`render.yaml`):** Free cloud hosting with automated HTTPS SSL certificates. Push to GitHub, connect to [Render](https://render.com), and your app is live at `https://repo-lens.onrender.com`.
+- **Docker (`Dockerfile` & `docker-compose.yml`):** Run anywhere via `docker compose up -d`.
+- **Fly.io (`fly.toml`):** Deploy edge containers via `fly launch`.
+
+#### C. Local Wi-Fi / LAN Mode
 ```bash
 repolens web    # aliases: repolens ui, repolens serve, repolens app
 ```
-
-When started, it outputs both the desktop and phone LAN access URLs:
-```text
-  💻 Desktop Browser:  http://localhost:8000
-  📱 Phone / LAN URL:  http://192.168.1.X:8000
-```
-- **Phone Access:** Connect your phone to the same Wi-Fi, open the phone URL in Safari or Chrome.
-- **Native Mobile Feel:** Includes a bottom navigation bar (`💬 Chat`, `🔍 Search`, `📦 Repos`, `⚙️ Settings`), touch-optimized controls, and collapsible evidence accordions.
+- **Phone Access:** Connect your phone to the same Wi-Fi, open `http://<LAN-IP>:8000`.
 - **Install on Phone:** Tap *"Add to Home Screen"* in iOS Safari or Android Chrome to install RepoLens as a standalone Progressive Web App (PWA).
 
 ### 9. System Status
@@ -141,7 +153,8 @@ repolens status
 
 | Command | Aliases | Arguments | Description |
 |---|---|---|---|
-| `repolens web` | `ui`, `serve`, `app` | `[--port <p>] [--host <h>] [--no-browser]` | Launch responsive Web & Phone application |
+| `repolens web` | `ui`, `serve`, `app` | `[--cloud] [--port <p>] [--host <h>]` | Launch Web & Phone application |
+| `repolens cloud` | `share` | | Launch with instant public HTTPS cloud URL |
 | `repolens <question>` | | | Ask directly without typing `ask` |
 | `repolens ingest <source>` | `clone`, `add` | `[--force] [--python-only]` | Clone/load, index, and activate repository |
 | `repolens use <repo>` | `select`, `switch` | `<repo_name>` | Set active repository (supports fuzzy match) |
@@ -177,4 +190,4 @@ Run the complete test suite:
 ```bash
 pytest
 ```
-Includes 62 automated tests covering repository loading, multi-format indexing, code tokenization, dense semantic vectors, hybrid RRF retrieval, citation verification with GitHub links, multi-provider LLM integrations, web server endpoints, and CLI UX commands.
+Includes 63 automated tests covering repository loading, multi-format indexing, code tokenization, dense semantic vectors, hybrid RRF retrieval, citation verification with GitHub links, multi-provider LLM integrations, web server endpoints, and CLI UX commands.

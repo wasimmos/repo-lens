@@ -134,6 +134,7 @@ class RepoLensHandler(BaseHTTPRequestHandler):
                 "provider_ready": is_ready,
                 "provider_msg": msg,
                 "lan_ip": get_local_ip(),
+                "public_url": CURRENT_PUBLIC_URL,
                 "server_host": self.server.server_address[0],
                 "server_port": self.server.server_address[1],
             })
@@ -393,12 +394,27 @@ class RepoLensHandler(BaseHTTPRequestHandler):
         self._send_error(f"Endpoint '{path}' not found", status=404)
 
 
+CURRENT_PUBLIC_URL: Optional[str] = None
+
+
 def run_server(
     host: str = "0.0.0.0",
     port: int = 8000,
     open_browser: bool = False,
+    cloud_tunnel: bool = False,
 ) -> None:
     """Start the multi-threaded RepoLens Web and Mobile application server."""
+    global CURRENT_PUBLIC_URL
+
+    # Environment variable overrides (essential for cloud platforms like Render / Railway / Heroku / Fly.io)
+    if "PORT" in os.environ:
+        try:
+            port = int(os.environ["PORT"])
+        except ValueError:
+            pass
+    if "HOST" in os.environ:
+        host = os.environ["HOST"]
+
     lan_ip = get_local_ip()
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -416,20 +432,35 @@ def run_server(
     desktop_url = f"http://localhost:{active_port}"
     mobile_url = f"http://{lan_ip}:{active_port}"
 
-    print("\n" + "=" * 65)
-    print("  🚀 RepoLens 🔍 Mobile & Web Application Running")
-    print("=" * 65)
-    print(f"  💻 Desktop Browser:  \033[1;36m{desktop_url}\033[0m")
-    print(f"  📱 Phone / LAN URL:  \033[1;32m{mobile_url}\033[0m")
-    print("=" * 65)
-    print("  • Connect your phone to the same Wi-Fi network.")
-    print("  • Open the Phone URL in Safari / Chrome on your phone.")
-    print("  • Tap 'Add to Home Screen' to install as a native mobile app.")
+    # Initialize cloud tunnel if requested
+    tunnel = None
+    if cloud_tunnel or os.environ.get("REPOLENS_CLOUD") == "1":
+        from src.web.tunnel import CloudTunnel
+
+        print("\n  ⏳ Initializing secure public cloud tunnel...")
+        tunnel = CloudTunnel(active_port)
+        pub_url = tunnel.start(timeout=12)
+        if pub_url:
+            CURRENT_PUBLIC_URL = pub_url
+
+    print("\n" + "=" * 68)
+    print("  🚀 RepoLens 🔍 Web & Mobile Application")
+    print("=" * 68)
+    if CURRENT_PUBLIC_URL:
+        print(f"  🌐 Public Cloud URL:  \033[1;32m{CURRENT_PUBLIC_URL}\033[0m")
+        print(f"     ↳ Accessible from ANY phone or browser worldwide (4G/5G/Wi-Fi)")
+    print(f"  💻 Localhost URL:     \033[1;36m{desktop_url}\033[0m")
+    print(f"  📱 Phone / LAN URL:   \033[1;36m{mobile_url}\033[0m")
+    print("=" * 68)
+    if not CURRENT_PUBLIC_URL:
+        print("  • To access from outside your Wi-Fi, run: repolens web --cloud")
+    print("  • Tap 'Add to Home Screen' on your phone to install as a native app.")
     print("  Press Ctrl+C to stop the server.\n")
 
-    if open_browser:
+    if open_browser and not CURRENT_PUBLIC_URL:
         try:
             import webbrowser
+
             webbrowser.open(desktop_url)
         except Exception:
             pass
@@ -439,4 +470,7 @@ def run_server(
     except KeyboardInterrupt:
         print("\nStopping RepoLens Web server...")
     finally:
+        if tunnel:
+            tunnel.stop()
         server.server_close()
+

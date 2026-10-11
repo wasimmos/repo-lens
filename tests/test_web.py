@@ -139,3 +139,31 @@ def test_api_ask(web_server):
             assert data["success"] is True
             assert "auth.py:10-20" in data["answer"]
             assert len(data["evidence"]) >= 1
+
+
+def test_cloud_tunnel_parsing():
+    from io import StringIO
+    from unittest.mock import MagicMock
+    from src.web.tunnel import CloudTunnel
+
+    tunnel = CloudTunnel(8000)
+    assert tunnel.local_port == 8000
+    assert tunnel.public_url is None
+
+    # Mock Popen with simulated localhost.run output
+    mock_proc = MagicMock()
+    mock_proc.stdout.readline.side_effect = [
+        "Welcome to localhost.run!\n",
+        "abc123xyz.lhr.life tunneled with tls termination, https://abc123xyz.lhr.life\n",
+        "",
+    ]
+    mock_proc.poll.return_value = None
+
+    with patch("subprocess.Popen", return_value=mock_proc):
+        url = tunnel.start(timeout=2)
+        assert url == "https://abc123xyz.lhr.life"
+        assert tunnel.public_url == "https://abc123xyz.lhr.life"
+
+    tunnel.stop()
+    assert tunnel.process is None
+
